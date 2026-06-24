@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JL Intelligence | AI Financial Analysis Solution</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Noto+Sans+TC:wght@400;700&display=swap');
+        body { font-family: 'Inter', 'Noto Sans TC', 'PingFang SC', sans-serif; }
+        .prose h3 { color: #1e3a8a; font-weight: bold; margin-top: 1.5em; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.5rem; }
+        .prose h4 { color: #b91c1c; font-weight: bold; margin-top: 1.2em; }
+        .loader { border: 3px solid #f3f3f3; border-radius: 50%; border-top: 3px solid #dc2626; width: 20px; height: 20px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .edu-tag { font-size: 8px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; text-transform: uppercase; letter-spacing: 0.02em; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState } = React;
+
+        // --- ⚙️ 多语言字典 (ZH-S / ZH-T / EN) ---
+        const LANG_DICT = {
+            zh_hk: {
+                title: "JL Intelligence | 精靈人工智能",
+                subtitle: "針對華夏基金定制的 AI 投研原型",
+                upload: "上傳研究文檔",
+                uploadHint: "點擊上傳 PDF 財務報表",
+                uploadDetail: "支持跨頁深度掃描與數據提取",
+                modeTitle: "智能代理任務",
+                comprehensive: "深度投資价值評估",
+                compliance: "合規風控全掃描",
+                quick: "CIO 3 分鐘摘要",
+                runBtn: "啟動 AI 分析",
+                running: "JL Agent 正在推理...",
+                waiting: "等待指令輸入",
+                waitHint: "請上傳財務文件以開啟深度分析",
+                founder: "創辦人",
+                version: "企業級原型 v1.5 (Live)",
+                disclaimer: "本頁面由 JL Intelligence (Jingling Education) 開發，僅用於技術演示與投研流程原型展示。"
+            },
+            zh_cn: {
+                title: "JL Intelligence | 精灵人工智能",
+                subtitle: "针对华夏基金定制的 AI 投研原型",
+                upload: "上传研究文档",
+                uploadHint: "点击上传 PDF 财务报表",
+                uploadDetail: "支持跨页深度扫描与数据提取",
+                modeTitle: "智能代理任务",
+                comprehensive: "深度投资价值评估",
+                compliance: "合规风控全扫描",
+                quick: "CIO 3 分钟摘要",
+                runBtn: "启动 AI 分析",
+                running: "JL Agent 正在推理...",
+                waiting: "等待指令输入",
+                waitHint: "请上传财务文件以开启深度分析",
+                founder: "创始人",
+                version: "企业级原型 v1.5 (Live)",
+                disclaimer: "本页面由 JL Intelligence (Jingling Education) 开发，仅用于技术演示与投研流程原型展示。"
+            },
+            en: {
+                title: "JL Intelligence",
+                subtitle: "Custom AI Research Prototype for ChinaAMC",
+                upload: "Upload Document",
+                uploadHint: "Upload PDF Financial Report",
+                uploadDetail: "Cross-page deep scan & data extraction",
+                modeTitle: "Agent Task",
+                comprehensive: "Deep Investment Thesis",
+                compliance: "Full Compliance Scan",
+                quick: "3-Min Executive Brief",
+                runBtn: "Launch AI Analysis",
+                running: "JL Agent Inferencing...",
+                waiting: "Awaiting Input",
+                waitHint: "Please upload a document to begin analysis",
+                founder: "Founder",
+                version: "Enterprise Prototype v1.5 (Live)",
+                disclaimer: "Developed by JL Intelligence (Jingling Education) for professional demo purposes."
+            }
+        };
+
+        // --- ⚙️ 品牌与个人配置 ---
+        const CONFIG = {
+            brandName: "JL Intelligence",
+            parentCompany: "Jingling Education & Intelligence",
+            userName: "Margot Jing Zhou (周菁)",
+            initials: "JZ",
+            edu: ["UPenn", "Cambridge", "PKU"]
+        };
+
+        // --- 🟢 关键配置：改为相对路径以实现容器化自动识别 ---
+        const API_URL = "/analyze"; 
+
+        const Icons = {
+            Upload: () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>,
+            File: () => <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>,
+            BrandLogo: () => (
+                <div className="w-12 h-12 bg-slate-900 rounded-xl flex items-center justify-center text-white shadow-lg relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-br from-red-600 to-indigo-900 opacity-90"></div>
+                    <span className="relative z-10 font-black text-lg">JL</span>
+                </div>
+            )
+        };
+
+        const App = () => {
+            const [lang, setLang] = useState('zh_hk');
+            const [file, setFile] = useState(null);
+            const [analysisType, setAnalysisType] = useState('comprehensive');
+            const [isLoading, setIsLoading] = useState(false);
+            const [result, setResult] = useState(null);
+            const [error, setError] = useState(null);
+
+            const t = LANG_DICT[lang];
+
+            const handleFileUpload = (e) => setFile(e.target.files[0]);
+
+            const runAnalysis = async () => {
+                if (!file) return;
+                setIsLoading(true);
+                setResult(null);
+                setError(null);
+
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('analysis_type', analysisType);
+                formData.append('language', lang); // 将语言代码传回后端以保持多语言输出
+
+                try {
+                    const response = await fetch(API_URL, { 
+                        method: 'POST', 
+                        body: formData 
+                    });
+                    
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.detail || "API Error");
+                    }
+                    
+                    const data = await response.json();
+                    setResult(data.analysis);
+                } catch (err) {
+                    setError(lang === 'en' ? "Server processing error... please check logs." : "服務端處理出錯，請檢查服務日誌...");
+                    console.error("Fetch Error:", err);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            return (
+                <div className="min-h-screen flex flex-col">
+                    {/* Header */}
+                    <header className="bg-white border-b border-gray-200 px-8 h-20 flex items-center justify-between sticky top-0 z-50 backdrop-blur-md bg-white/90">
+                        <div className="flex items-center gap-4">
+                            <Icons.BrandLogo />
+                            <div>
+                                <h1 className="text-xl font-black text-gray-900 tracking-tight leading-none mb-1">{t.title}</h1>
+                                <p className="text-[10px] text-red-600 font-bold uppercase tracking-widest">{t.subtitle}</p>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-8">
+                            {/* Language Switcher */}
+                            <div className="flex bg-gray-100 p-1 rounded-lg text-[10px] font-bold">
+                                {['zh_hk', 'zh_cn', 'en'].map(l => (
+                                    <button 
+                                        key={l}
+                                        onClick={() => setLang(l)}
+                                        className={`px-3 py-1.5 rounded-md transition-all ${lang === l ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}
+                                    >
+                                        {l.toUpperCase().replace('_', '-')}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* User Profile */}
+                            <div className="flex items-center gap-4 border-l pl-8 border-gray-100">
+                                <div className="text-right hidden md:block">
+                                    <p className="text-sm font-black text-gray-800 leading-tight">{CONFIG.userName}</p>
+                                    <p className="text-[10px] text-gray-400 font-medium mb-1.5">{t.founder}, {CONFIG.parentCompany}</p>
+                                    <div className="flex justify-end gap-1.5">
+                                        {CONFIG.edu.map(uni => (
+                                            <span key={uni} className="edu-tag">{uni}</span>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="h-12 w-12 bg-slate-800 rounded-full flex items-center justify-center text-xs font-black text-white shadow-md">
+                                    {CONFIG.initials}
+                                </div>
+                            </div>
+                        </div>
+                    </header>
+
+                    <main className="flex-1 max-w-7xl mx-auto w-full p-6 grid grid-cols-1 lg:grid-cols-12 gap-8">
+                        {/* Sidebar */}
+                        <div className="lg:col-span-4 space-y-6">
+                            
+                            {/* 1. Upload Box */}
+                            <div className="bg-white p-6 rounded-3xl shadow-xl shadow-gray-200/50 border border-gray-100">
+                                <h2 className="text-[10px] font-black text-gray-400 mb-4 uppercase tracking-widest">01. {t.upload}</h2>
+                                <label className="block border-2 border-dashed border-gray-200 rounded-2xl p-10 text-center cursor-pointer hover:border-indigo-500 hover:bg-indigo-50/30 transition-all group">
+                                    <div className="flex flex-col items-center gap-3">
+                                        <div className="w-14 h-14 bg-gray-50 rounded-2xl flex items-center justify-center group-hover:rotate-6 transition-transform shadow-sm text-indigo-500">
+                                            <Icons.Upload />
+                                        </div>
+                                        <span className="text-sm font-bold text-gray-700 truncate max-w-[200px]">
+                                            {file ? file.name : t.uploadHint}
+                                        </span>
+                                        <p className="text-[10px] text-gray-400">{t.uploadDetail}</p>
+                                    </div>
+                                    <input type="file" className="hidden" accept=".pdf" onChange={handleFileUpload} />
+                                </label>
+                            </div>
+
+                            {/* 2. Task Box */}
+                            <div className="bg-white p-6 rounded-3xl shadow-xl shadow-gray-200/50 border border-gray-100">
+                                <h2 className="text-[10px] font-black text-gray-400 mb-6 uppercase tracking-widest">02. {t.modeTitle}</h2>
+                                <div className="space-y-3">
+                                    {[
+                                        {id: 'comprehensive', label: t.comprehensive, sub: 'Alpha Signal, Valuation'},
+                                        {id: 'compliance', label: t.compliance, sub: 'SFC/Regulatory Review'},
+                                        {id: 'quick', label: t.quick, sub: 'Executive Decision Data'}
+                                    ].map(m => (
+                                        <label key={m.id} className={`block p-4 rounded-2xl border-2 cursor-pointer transition-all ${analysisType === m.id ? 'border-indigo-600 bg-indigo-50/50 shadow-sm' : 'border-gray-50 hover:border-gray-100'}`}>
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-2 h-2 rounded-full ${analysisType === m.id ? 'bg-indigo-600 animate-pulse' : 'bg-gray-200'}`}></div>
+                                                <input type="radio" name="mode" value={m.id} checked={analysisType === m.id} onChange={e => setAnalysisType(e.target.value)} className="hidden"/>
+                                                <div>
+                                                    <p className={`text-sm font-black ${analysisType === m.id ? 'text-indigo-900' : 'text-gray-700'}`}>{m.label}</p>
+                                                    <p className="text-[9px] text-gray-400 font-medium uppercase">{m.sub}</p>
+                                                </div>
+                                            </div>
+                                        </label>
+                                    ))}
+                                </div>
+                                <button 
+                                    onClick={runAnalysis} 
+                                    disabled={isLoading || !file}
+                                    className={`w-full mt-8 py-5 rounded-2xl font-black text-sm tracking-widest text-white shadow-xl transition-all shadow-indigo-200 ${isLoading || !file ? 'bg-gray-300' : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95'}`}
+                                >
+                                    {isLoading ? <div className="flex items-center justify-center gap-3"><div className="loader"></div>{t.running}</div> : t.runBtn}
+                                </button>
+                            </div>
+
+                            {/* Disclaimer Box */}
+                            <div className="p-5 bg-slate-900 rounded-3xl shadow-lg">
+                                <h3 className="text-white text-[10px] font-black mb-2 flex items-center gap-2">
+                                    <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse"></span>
+                                    SYSTEM DISCLAIMER
+                                </h3>
+                                <p className="text-[9px] text-slate-400 leading-relaxed font-medium">
+                                    {t.disclaimer}
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Console */}
+                        <div className="lg:col-span-8 bg-white rounded-[2.5rem] shadow-2xl shadow-gray-300/40 border border-gray-100 flex flex-col min-h-[700px] overflow-hidden">
+                            <div className="bg-gray-50/80 border-b border-gray-100 px-8 py-5 flex justify-between items-center">
+                                <div className="flex items-center gap-3">
+                                    <div className="flex gap-1.5">
+                                        <div className="w-2.5 h-2.5 rounded-full bg-red-400"></div>
+                                        <div className="w-2.5 h-2.5 rounded-full bg-amber-400"></div>
+                                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-400"></div>
+                                    </div>
+                                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-4">Inference Console</span>
+                                </div>
+                                <span className="text-[10px] font-bold text-gray-400 italic uppercase">{t.version}</span>
+                            </div>
+
+                            <div className="flex-1 p-12 overflow-y-auto">
+                                {!result && !isLoading && !error && (
+                                    <div className="h-full flex flex-col items-center justify-center text-gray-200">
+                                        <Icons.File />
+                                        <p className="mt-6 text-base font-bold text-gray-300 tracking-tight text-center uppercase">
+                                            {t.waiting}<br/>
+                                            <span className="text-[11px] font-medium text-gray-400 normal-case italic">{t.waitHint}</span>
+                                        </p>
+                                    </div>
+                                )}
+
+                                {error && (
+                                    <div className="bg-red-50 text-red-800 p-6 rounded-3xl border border-red-100 text-sm shadow-inner">
+                                        <div className="font-black mb-1 tracking-tight uppercase">Connection Alert</div>
+                                        <p className="font-medium opacity-80">{error}</p>
+                                    </div>
+                                )}
+
+                                {result && (
+                                    <div className="prose max-w-none animate-in fade-in slide-in-from-bottom-4 duration-1000">
+                                        {result.split('\n').map((line, i) => {
+                                            if (line.startsWith('### ')) return <h3 key={i} className="text-2xl font-black tracking-tight mt-8 mb-6">{line.replace('### ', '')}</h3>;
+                                            if (line.startsWith('#### ')) return <h4 key={i} className="text-lg font-bold mt-6 mb-3">{line.replace('#### ', '')}</h4>;
+                                            if (line.trim().startsWith('- ')) return <li key={i} className="ml-6 text-gray-600 font-medium mb-2">{line.replace('- ', '')}</li>;
+                                            return <p key={i} className="text-gray-700 leading-relaxed mb-4 font-medium" dangerouslySetInnerHTML={{__html: line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')}}></p>;
+                                        })}
+                                        <div className="mt-16 pt-8 border-t border-gray-100 flex justify-between items-center text-[10px] font-bold text-gray-400 uppercase tracking-tight">
+                                            <span>Inference Terminated</span>
+                                            <span>Generated by JL Agent on Gemini 1.5 Pro</span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </main>
+
+                    <footer className="bg-white border-t border-gray-100 py-8 px-12 flex flex-col md:flex-row justify-between items-center gap-4 text-center">
+                        <div className="text-[10px] text-gray-400 font-medium">
+                            © 2026 {CONFIG.userName}. Powered by <span className="font-black text-gray-600">{CONFIG.brandName}</span>
+                        </div>
+                        <div className="text-[9px] text-gray-300 font-bold uppercase tracking-[0.3em]">
+                            {CONFIG.parentCompany} | Hong Kong SAR
+                        </div>
+                    </footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

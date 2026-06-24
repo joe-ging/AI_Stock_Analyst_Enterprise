@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  db:
+    image: ankane/pgvector:latest
+    container_name: enterprise-rag-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    restart: always
+
+  engine:
+    build: ./engine
+    container_name: enterprise-rag-engine
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/postgres
+    ports:
+      - "8001:8001"
+    depends_on:
+      - db
+    restart: always
+
+  gateway:
+    build: ./gateway
+    container_name: enterprise-rag-gateway
+    environment:
+      - ENGINE_URL=http://engine:8001
+      - PORT=8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      - engine
+    restart: always
+
+volumes:
+  pgdata:
