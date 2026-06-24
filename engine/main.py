@@ -203,7 +203,7 @@ async def ingest_document(file: UploadFile = File(...)):
     task = ingest_pdf_task.delay(file.filename, doc_id)
     
     # Async polling
-    timeout_limit = 180.0
+    timeout_limit = 600.0
     elapsed = 0.0
     while not task.ready():
         await asyncio.sleep(0.5)
