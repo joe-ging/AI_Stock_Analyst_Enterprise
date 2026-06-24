@@ -113,6 +113,8 @@
             const [citations, setCitations] = useState([]);
             const [error, setError] = useState(null);
             const [dbStatus, setDbStatus] = useState("checking");
+            const [cacheHit, setCacheHit] = useState(null);
+            const [inferenceTime, setInferenceTime] = useState(null);
  
             const t = LANG_DICT[lang];
  
@@ -142,6 +144,8 @@
                 setIsLoading(true);
                 setResult(null);
                 setError(null);
+                setCacheHit(null);
+                setInferenceTime(null);
 
                 const formData = new FormData();
                 formData.append('file', file);
@@ -162,6 +166,8 @@
                     const data = await response.json();
                     setResult(data.analysis);
                     setCitations(data.citations || []);
+                    setCacheHit(data.cache_hit);
+                    setInferenceTime(data.inference_time_ms);
                 } catch (err) {
                     setError(lang === 'en' ? "Server processing error... please check logs." : "服務端處理出錯，請檢查服務日誌...");
                     console.error("Fetch Error:", err);
@@ -287,7 +293,7 @@
 
                         {/* Console */}
                         <div className="lg:col-span-8 bg-white rounded-[2.5rem] shadow-2xl shadow-gray-300/40 border border-gray-100 flex flex-col min-h-[700px] overflow-hidden">
-                            <div className="bg-gray-50/80 border-b border-gray-100 px-8 py-5 flex justify-between items-center">
+                            <div className="bg-gray-50/80 border-b border-gray-100 px-8 py-5 flex justify-between items-center flex-wrap gap-4">
                                 <div className="flex items-center gap-3">
                                     <div className="flex gap-1.5">
                                         <div className="w-2.5 h-2.5 rounded-full bg-red-400"></div>
@@ -296,6 +302,20 @@
                                     </div>
                                     <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-4">Inference Console</span>
                                 </div>
+                                
+                                {inferenceTime !== null && (
+                                    <div className="flex items-center gap-4 text-[10px] font-black">
+                                        <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1.5 rounded-md text-slate-600">
+                                            <span>LATENCY:</span>
+                                            <span className="text-slate-900">{inferenceTime}ms</span>
+                                        </div>
+                                        <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md ${cacheHit ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
+                                            <span>CACHE:</span>
+                                            <span>{cacheHit ? 'HIT' : 'MISS'}</span>
+                                        </div>
+                                    </div>
+                                )}
+                                
                                 <span className="text-[10px] font-bold text-gray-400 italic uppercase">{t.version}</span>
                             </div>
 

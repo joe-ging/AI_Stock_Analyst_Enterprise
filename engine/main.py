@@ -4,11 +4,19 @@ import logging
 import gc
 import psycopg2
 import uvicorn
+import redis
+import json
+import asyncio
+import uuid
+import boto3
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from google import genai
 from google.genai import types
 from io import BytesIO
-from PyPDF2 import PdfReader
+from pymilvus import connections, utility, FieldSchema, CollectionSchema, DataType, Collection
+
+# Import Celery task
+from tasks import ingest_pdf_task
 
 # --- 0. Logging Configuration ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -16,9 +24,36 @@ logger = logging.getLogger("RAG-Engine")
 
 API_KEY = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@db:5432/postgres")
+REDIS_URL = os.environ.get("REDIS_URL", "redis://cache:6379/0")
+
+# Milvus Connection Configs
+MILVUS_HOST = os.environ.get("MILVUS_HOST", "milvus")
+MILVUS_PORT = os.environ.get("MILVUS_PORT", "19530")
+
+# S3 / MinIO Configs
+s3_endpoint = os.environ.get("S3_ENDPOINT_URL", "http://minio:9000")
+s3_key_id = os.environ.get("S3_ACCESS_KEY_ID", "minioadmin")
+s3_secret = os.environ.get("S3_SECRET_ACCESS_KEY", "minioadmin")
 
 app = FastAPI()
 client = genai.Client(api_key=API_KEY)
+
+# Connect to Redis
+redis_client = None
+try:
+    redis_client = redis.from_url(REDIS_URL, socket_connect_timeout=2)
+    logger.info("Connected to Redis successfully.")
+except Exception as e:
+    logger.error(f"Failed to connect to Redis: {e}")
+
+# S3 Client Helper
+def get_s3_client():
+    return boto3.client(
+        's3',
+        aws_access_key_id=s3_key_id,
+        aws_secret_access_key=s3_secret,
+        endpoint_url=s3_endpoint
+    )
 
 # --- 1. Database Connection Helpers ---
 def get_db_connection():
@@ -33,20 +68,40 @@ def get_db_connection():
             time.sleep(3)
     raise Exception("Could not connect to the database after several retries.")
 
-# --- 2. Text Ingestion & Chunking Logic ---
-def chunk_text(text: str, chunk_size: int = 800, overlap: int = 100) -> list:
-    """Helper to split text into overlapping chunks"""
-    chunks = []
-    start = 0
-    while start < len(text):
-        end = start + chunk_size
-        chunks.append(text[start:end])
-        start += (chunk_size - overlap)
-    return chunks
+# --- 2. Milvus Connections ---
+def get_milvus_connection():
+    connections.connect("default", host=MILVUS_HOST, port=MILVUS_PORT)
+
+def init_cache_collection():
+    """Initializes the collection used for the semantic cache"""
+    get_milvus_connection()
+    collection_name = "semantic_cache_index"
+    
+    if not utility.has_collection(collection_name):
+        fields = [
+            FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
+            FieldSchema(name="query_text", dtype=DataType.VARCHAR, max_length=1024),
+            FieldSchema(name="cache_key", dtype=DataType.VARCHAR, max_length=256),
+            FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=768)
+        ]
+        schema = CollectionSchema(fields, "Semantic query cache mappings")
+        collection = Collection(collection_name, schema)
+        
+        index_params = {
+            "metric_type": "COSINE",
+            "index_type": "HNSW",
+            "params": {"M": 16, "efConstruction": 64}
+        }
+        collection.create_index("embedding", index_params)
+        logger.info(f"Milvus semantic cache collection created: {collection_name}")
+    else:
+        collection = Collection(collection_name)
+    
+    collection.load()
+    return collection
 
 @app.get("/health")
 async def health():
-    # Test DB connection
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -57,10 +112,18 @@ async def health():
     except Exception as e:
         db_status = f"error: {str(e)}"
     
+    # Test Milvus Connection
+    try:
+        get_milvus_connection()
+        milvus_status = "connected"
+    except Exception as e:
+        milvus_status = f"error: {str(e)}"
+        
     return {
         "status": "healthy",
         "gemini_api": "active" if API_KEY else "missing",
-        "database": db_status
+        "database": db_status,
+        "milvus": milvus_status
     }
 
 @app.post("/ingest")
@@ -68,84 +131,95 @@ async def ingest_document(file: UploadFile = File(...)):
     if not API_KEY:
         raise HTTPException(status_code=500, detail="Gemini API Key missing on Engine")
 
-    logger.info(f"Starting ingestion for: {file.filename}")
+    logger.info(f"Ingest endpoint hit for: {file.filename}")
     
-    # 1. Read and parse PDF
-    try:
-        content = await file.read()
-        reader = PdfReader(BytesIO(content))
-        raw_text = ""
-        # Process up to 50 pages for demo efficiency
-        for page in reader.pages[:50]:
-            text = page.extract_text()
-            if text:
-                raw_text += text + "\n"
-        
-        del reader
-        del content
-        gc.collect()
-    except Exception as e:
-        logger.error(f"PDF parsing error: {e}")
-        raise HTTPException(status_code=400, detail=f"PDF parsing failed: {str(e)}")
-
-    if not raw_text.strip():
-        raise HTTPException(status_code=400, detail="No readable text extracted from PDF")
-
-    # 2. Chunk text
-    chunks = chunk_text(raw_text)
-    logger.info(f"Split document into {len(chunks)} chunks")
-
-    # 3. Write document registry to DB
+    # 1. Check PostgreSQL first to skip parsing if already ingested
     conn = get_db_connection()
     cur = conn.cursor()
-    
     try:
-        # Check if already exists and delete to avoid duplicates
         cur.execute("SELECT id FROM documents WHERE filename = %s;", (file.filename,))
         row = cur.fetchone()
         if row:
-            cur.execute("DELETE FROM documents WHERE id = %s;", (row[0],))
-        
-        cur.execute("INSERT INTO documents (filename) VALUES (%s) RETURNING id;", (file.filename,))
-        doc_id = cur.fetchone()[0]
-        
-        # 4. Generate embeddings and insert chunks
-        # Call Gemini Embedding API in batches to avoid rate limits
-        batch_size = 15
-        for i in range(0, len(chunks), batch_size):
-            batch_chunks = chunks[i:i+batch_size]
+            doc_id = row[0]
+            # Verify Milvus has vectors for this document
+            get_milvus_connection()
+            if utility.has_collection("stock_analysis_chunks"):
+                collection = Collection("stock_analysis_chunks")
+                cnt_res = collection.query(expr=f"document_id == {doc_id}", output_fields=["id"])
+                if len(cnt_res) > 0:
+                    logger.info(f"Document {file.filename} already fully indexed in Milvus (doc_id={doc_id}, vectors={len(cnt_res)}). Skipping Ingestion.")
+                    return {"status": "skipped", "document_id": doc_id, "chunks_count": len(cnt_res)}
             
-            # Embed content using gemini-embedding-2 with 768 dimensions
-            response = client.models.embed_content(
-                model="gemini-embedding-2",
-                contents=batch_chunks,
-                config=types.EmbedContentConfig(output_dimensionality=768)
-            )
-            
-            # Insert into database
-            for j, embedding_obj in enumerate(response.embeddings):
-                chunk_idx = i + j
-                chunk_txt = batch_chunks[j]
-                vector_val = embedding_obj.values
-                
-                # Convert list of floats to Postgres vector string representation
-                vector_str = "[" + ",".join(map(str, vector_val)) + "]"
-                
-                cur.execute(
-                    "INSERT INTO document_chunks (document_id, chunk_index, chunk_text, embedding) VALUES (%s, %s, %s, %s::vector);",
-                    (doc_id, chunk_idx, chunk_txt, vector_str)
-                )
-        
-        conn.commit()
-        logger.info(f"Ingestion successful for {file.filename} (ID: {doc_id})")
-        return {"status": "success", "document_id": doc_id, "chunks_count": len(chunks)}
+            # If collection doesn't exist or is empty, delete PG record to proceed fresh
+            cur.execute("DELETE FROM documents WHERE id = %s;", (doc_id,))
+            conn.commit()
     except Exception as e:
-        conn.rollback()
-        logger.error(f"Ingestion failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Ingestion database error: {str(e)}")
+        logger.warning(f"Database pre-check encountered warning: {e}. Attempting recovery.")
+        try:
+            cur.execute("DELETE FROM documents WHERE filename = %s;", (file.filename,))
+            conn.commit()
+        except Exception as db_err:
+            logger.error(f"Recovery PG delete failed: {db_err}")
     finally:
         cur.close()
         conn.close()
+
+    # 2. Upload file to MinIO (S3) bucket "sec-filings"
+    s3 = get_s3_client()
+    try:
+        # Create bucket if it doesn't exist
+        try:
+            s3.create_bucket(Bucket="sec-filings")
+        except s3.exceptions.BucketAlreadyExists:
+            pass
+        except s3.exceptions.BucketAlreadyOwnedByYou:
+            pass
+        
+        # Upload
+        file_bytes = await file.read()
+        s3.upload_fileobj(BytesIO(file_bytes), "sec-filings", file.filename)
+        logger.info(f"Uploaded raw PDF bytes to S3/MinIO bucket 'sec-filings' under key '{file.filename}'")
+    except Exception as e:
+        logger.error(f"S3 upload to MinIO failed: {e}")
+        raise HTTPException(status_code=500, detail=f"S3/MinIO Object Storage upload failed: {str(e)}")
+
+    # 3. Create document registry in PostgreSQL
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("INSERT INTO documents (filename) VALUES (%s) RETURNING id;", (file.filename,))
+        doc_id = cur.fetchone()[0]
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Failed to write metadata registry to PostgreSQL: {e}")
+        raise HTTPException(status_code=500, detail=f"Metadata registry failed: {str(e)}")
+    finally:
+        cur.close()
+        conn.close()
+
+    # 4. Trigger Celery Task & wait asynchronously (non-blocking event loop)
+    logger.info(f"Triggering Celery background parsing task for doc_id={doc_id}")
+    task = ingest_pdf_task.delay(file.filename, doc_id)
+    
+    # Async polling
+    timeout_limit = 180.0
+    elapsed = 0.0
+    while not task.ready():
+        await asyncio.sleep(0.5)
+        elapsed += 0.5
+        if elapsed > timeout_limit:
+            logger.error(f"Ingestion Celery task timed out after {timeout_limit} seconds")
+            raise HTTPException(status_code=504, detail="Background ingestion parsing timed out.")
+    
+    # Get Celery result
+    res = task.result
+    if isinstance(res, dict) and res.get("status") == "failed":
+        logger.error(f"Ingestion worker failed: {res.get('error')}")
+        raise HTTPException(status_code=500, detail=f"Parsing task failed: {res.get('error')}")
+
+    logger.info(f"Document ingestion completely successful: {file.filename}")
+    return {"status": "success", "document_id": doc_id, "chunks_count": res.get("chunks_count")}
 
 @app.post("/query")
 async def query_rag(
@@ -156,86 +230,180 @@ async def query_rag(
     if not API_KEY:
         raise HTTPException(status_code=500, detail="Gemini API Key missing on Engine")
 
-    logger.info(f"Querying document: {filename} with analysis: {analysis_type} ({language})")
+    start_time = time.time()
+    cache_uuid = None
+    
+    # 1. Redis Semantic Cache (Cosine > 0.95 in Milvus cache index)
+    query_text_map = {
+        "comprehensive": "You are a senior investment analyst. Perform a deep institutional research analysis based on the retrieved context.",
+        "compliance": "You are a senior compliance officer. Audit the retrieved context for risk disclosures and regulatory red flags.",
+        "quick": "You are a fund manager's assistant. Provide a high-speed 3-minute executive brief based on the retrieved context."
+    }
+    target_query = query_text_map.get(analysis_type, "Analyze this report")
+    
+    # Embed the query to check cache
+    try:
+        emb_query_res = client.models.embed_content(
+            model="gemini-embedding-2",
+            contents=target_query,
+            config=types.EmbedContentConfig(output_dimensionality=768)
+        )
+        query_vector = emb_query_res.embeddings[0].values
+    except Exception as e:
+        logger.error(f"Embedding query failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Embedding calculation error: {str(e)}")
 
+    # Check semantic cache
+    cache_collection = init_cache_collection()
+    search_params = {"metric_type": "COSINE", "params": {}}
+    cache_results = cache_collection.search(
+        data=[query_vector],
+        anns_field="embedding",
+        param=search_params,
+        limit=1,
+        output_fields=["cache_key", "query_text"]
+    )
+    
+    if len(cache_results) > 0 and len(cache_results[0]) > 0:
+        match = cache_results[0][0]
+        similarity = match.distance
+        matched_key = match.entity.get("cache_key")
+        
+        # We enforce a high semantic similarity (e.g. Cosine > 0.98)
+        if similarity >= 0.97 and redis_client:
+            try:
+                cached_data = redis_client.get(matched_key)
+                if cached_data:
+                    logger.info(f"Semantic Cache HIT (Score: {similarity:.4f}) for key: {matched_key}")
+                    result = json.loads(cached_data.decode("utf-8"))
+                    result["cache_hit"] = True
+                    result["inference_time_ms"] = int((time.time() - start_time) * 1000)
+                    return result
+            except Exception as e:
+                logger.error(f"Redis cache fetch failed: {e}")
+
+    logger.info("Semantic Cache MISS. Proceeding with vector search and agent loop.")
+
+    # 2. Retrieve document ID
     conn = get_db_connection()
     cur = conn.cursor()
-    
     try:
-        # 1. Retrieve document ID
         cur.execute("SELECT id FROM documents WHERE filename = %s;", (filename,))
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Document not found. Please upload first.")
         doc_id = row[0]
-
-        # 2. Build target prompts
-        prompts = {
-            "comprehensive": "You are a senior investment analyst. Perform a deep institutional research analysis based on the retrieved context.",
-            "compliance": "You are a senior compliance officer. Audit the retrieved context for risk disclosures and regulatory red flags.",
-            "quick": "You are a fund manager's assistant. Provide a high-speed 3-minute executive brief based on the retrieved context."
-        }
-        
-        lang_map = {
-            "en": "English",
-            "zh_cn": "Simplified Chinese (简体中文)",
-            "zh_hk": "Traditional Chinese (繁體中文)"
-        }
-        target_lang = lang_map.get(language, "English")
-        
-        # 3. Query embedding
-        query_text = prompts.get(analysis_type, "Analyze this report")
-        emb_response = client.models.embed_content(
-            model="gemini-embedding-2",
-            contents=query_text,
-            config=types.EmbedContentConfig(output_dimensionality=768)
-        )
-        query_vector = emb_response.embeddings[0].values
-        query_vector_str = "[" + ",".join(map(str, query_vector)) + "]"
-
-        # 4. Semantic Search in pgvector
-        cur.execute(
-            """
-            SELECT chunk_text 
-            FROM document_chunks 
-            WHERE document_id = %s 
-            ORDER BY embedding <=> %s::vector 
-            LIMIT 5;
-            """,
-            (doc_id, query_vector_str)
-        )
-        
-        rows = cur.fetchall()
-        retrieved_context = "\n\n".join([r[0] for r in rows])
-        
-        # 5. Generate final response using Gemini
-        language_instruction = (
-            f"IMPORTANT: The user has selected {target_lang} as their preferred language. "
-            f"You MUST generate the entire report in {target_lang}. Use professional financial terminology appropriate for that language."
-        )
-        
-        final_prompt = (
-            f"{language_instruction}\n\n"
-            f"{query_text}\n\n"
-            f"[RETIREVED CONTEXT FROM SEC 10-K FILING]:\n{retrieved_context}"
-        )
-
-        # Generate content using Gemini 2.5 Flash
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=final_prompt
-        )
-        analysis_result = response.text
-
-        return {"analysis": analysis_result}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Query execution failed: {e}")
-        raise HTTPException(status_code=500, detail=f"RAG search failed: {str(e)}")
     finally:
         cur.close()
         conn.close()
+
+    # 3. LangGraph Multi-Agent Orchestrator Emulation
+    # Node 1: Router Node
+    logger.info("LangGraph [Router Node] executing...")
+    lang_map = {
+        "en": "English",
+        "zh_cn": "Simplified Chinese (简体中文)",
+        "zh_hk": "Traditional Chinese (繁體中文)"
+    }
+    target_lang = lang_map.get(language, "English")
+    logger.info(f"Router directed query: {analysis_type} | Language: {target_lang}")
+
+    # Node 2: Retriever Node (Milvus Parent-Child Search)
+    logger.info("LangGraph [Retriever Node] executing parent-child similarity search...")
+    get_milvus_connection()
+    collection = Collection("stock_analysis_chunks")
+    
+    # Query vectors matching doc_id
+    search_res = collection.search(
+        data=[query_vector],
+        anns_field="embedding",
+        param={"metric_type": "COSINE", "params": {"ef": 64}},
+        limit=5,
+        expr=f"document_id == {doc_id}",
+        output_fields=["page_number", "parent_text", "child_text"]
+    )
+    
+    retrieved_items = []
+    if len(search_res) > 0:
+        for match in search_res[0]:
+            retrieved_items.append({
+                "page_number": match.entity.get("page_number"),
+                "parent_text": match.entity.get("parent_text"),
+                "child_text": match.entity.get("child_text")
+            })
+
+    # Build RAG context with parent text (keeps table structure and section intact)
+    retrieved_context = ""
+    citations = []
+    for item in retrieved_items:
+        page = item["page_number"]
+        parent_txt = item["parent_text"]
+        retrieved_context += f"\n--- [Page {page}] ---\n{parent_txt}\n"
+        citations.append({
+            "chunk_index": page, # We citation page number directly!
+            "text": f"Page {page}: " + parent_txt[:200].strip() + "..."
+        })
+
+    # Node 3: Generator & Auditor Agent (Model Cascade: Flash -> Pro)
+    logger.info("LangGraph [Auditor & Generator Node] executing Model Cascade...")
+    language_instruction = (
+        f"IMPORTANT: The user has selected {target_lang} as their preferred language. "
+        f"You MUST generate the entire report in {target_lang}. Use professional financial terminology."
+    )
+    
+    final_prompt = (
+        f"{language_instruction}\n\n"
+        f"{target_query}\n\n"
+        f"IMPORTANT: You MUST base your analysis strictly on the retrieved context. Cite actual page numbers from the context when referring to statistics. Use actual fiscal years (current year is 2026).\n\n"
+        f"[RETRIEVED DATA FROM SEC 10-K FILING]:\n{retrieved_context}"
+    )
+
+    # Initial Draft by Gemini 2.5 Flash
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=final_prompt
+    )
+    draft_result = response.text
+    
+    # Audit & Final Polish by Gemini 2.5 Pro (Model Cascade)
+    logger.info("Cascading to Gemini 2.5 Pro for Auditor sanity check & factual verification...")
+    audit_prompt = (
+        f"You are a Senior Financial Audit Agent. Review the following draft report against the original source context. "
+        f"Ensure that all dates, financial numbers (revenue, net income, etc.) and page references match the source exactly. "
+        f"Correct any misstatements or formatting gaps, and output the final polished report in {target_lang}.\n\n"
+        f"[SOURCE CONTEXT]:\n{retrieved_context}\n\n"
+        f"[DRAFT REPORT]:\n{draft_result}"
+    )
+    
+    pro_response = client.models.generate_content(
+        model="gemini-2.5-pro",
+        contents=audit_prompt
+    )
+    final_report = pro_response.text
+    logger.info("LangGraph agent loop successfully completed.")
+
+    # 4. Save to Redis and register in Semantic Cache Index
+    output_data = {
+        "analysis": final_report,
+        "citations": citations,
+        "cache_hit": False,
+        "inference_time_ms": int((time.time() - start_time) * 1000)
+    }
+    
+    new_cache_key = f"analysis_cache_store:{uuid.uuid4()}"
+    if redis_client:
+        try:
+            # Cache for 2 hours
+            redis_client.setex(new_cache_key, 7200, json.dumps(output_data))
+            
+            # Index vector in Milvus
+            cache_collection.insert([[target_query], [new_cache_key], [query_vector]])
+            cache_collection.flush()
+            logger.info(f"Saved query results to Redis and indexed query in Milvus cache: {new_cache_key}")
+        except Exception as e:
+            logger.error(f"Failed to update semantic cache store: {e}")
+
+    return output_data
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8001)
