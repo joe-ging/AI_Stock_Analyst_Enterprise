@@ -56,7 +56,7 @@ async def analyze_document(
 ):
     logger.info(f"Gateway received request: {file.filename} | Type: {analysis_type} | Lang: {language}")
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    async with httpx.AsyncClient(timeout=600.0) as client:
         # Step 1: Forward file to engine for RAG ingestion
         try:
             file_bytes = await file.read()
