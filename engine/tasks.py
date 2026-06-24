@@ -121,6 +121,7 @@ def ingest_pdf_task(filename: str, doc_id: int):
         pipeline_options = PdfPipelineOptions()
         pipeline_options.do_ocr = False
         pipeline_options.do_table_structure = False
+        pipeline_options.do_layout = False
         pipeline_options.ocr_options = EasyOcrOptions()
         pipeline_options.ocr_options.lang = ["en", "ch_sim"]
         
