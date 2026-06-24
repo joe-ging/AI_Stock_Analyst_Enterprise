@@ -84,7 +84,6 @@ services:
       - S3_SECRET_ACCESS_KEY=minioadmin
       - MILVUS_HOST=milvus
       - MILVUS_PORT=19530
-      - HF_ENDPOINT=https://hf-mirror.com
     ports:
       - "8001:8001"
     depends_on:
@@ -111,7 +110,6 @@ services:
       - S3_SECRET_ACCESS_KEY=minioadmin
       - MILVUS_HOST=milvus
       - MILVUS_PORT=19530
-      - HF_ENDPOINT=https://hf-mirror.com
     depends_on:
       - db
       - cache
