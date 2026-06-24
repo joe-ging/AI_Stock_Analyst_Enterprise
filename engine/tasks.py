@@ -119,7 +119,7 @@ def ingest_pdf_task(filename: str, doc_id: int):
         from docling.document_converter import PdfFormatOption
         
         pipeline_options = PdfPipelineOptions()
-        pipeline_options.do_ocr = True
+        pipeline_options.do_ocr = False
         pipeline_options.ocr_options = EasyOcrOptions()
         pipeline_options.ocr_options.lang = ["en", "ch_sim"]
         
