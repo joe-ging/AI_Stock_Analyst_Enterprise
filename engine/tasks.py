@@ -108,59 +108,69 @@ def ingest_pdf_task(filename: str, doc_id: int):
         logger.error(f"Failed to download {filename} from MinIO: {e}")
         return {"status": "failed", "error": f"MinIO download failed: {str(e)}"}
     
-    # 2. Extract structured elements using Docling
+    # 2. Extract structured elements using pdfplumber (Fast fallback)
     chunks_with_metadata = []
+    import pdfplumber
     try:
-        logger.info(f"Parsing PDF layout-aware via Docling: {filename}")
-        
-        # Configure Docling to use EasyOCR and keep OCR enabled
-        from docling.datamodel.pipeline_options import PdfPipelineOptions, EasyOcrOptions
-        from docling.datamodel.base_models import InputFormat
-        from docling.document_converter import PdfFormatOption
-        
-        pipeline_options = PdfPipelineOptions()
-        pipeline_options.do_ocr = False
-        pipeline_options.do_table_structure = False
-        pipeline_options.do_layout = False
-        pipeline_options.ocr_options = EasyOcrOptions()
-        pipeline_options.ocr_options.lang = ["en", "ch_sim"]
-        
-        converter = DocumentConverter(
-            format_options={
-                InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
-            }
-        )
-        result = converter.convert(local_path)
-        
-        for element, _level in result.document.iterate_items():
-            # Extract page provenance
-            page_num = 1
-            if element.prov:
-                page_num = element.prov[0].page_no
-            
-            # Extract parent text
-            parent_txt = element.text if hasattr(element, "text") else ""
-            if not parent_txt or not parent_txt.strip():
-                continue
-            parent_txt = parent_txt.strip()
-            
-            # Generate child chunks for high-density semantic vector search
-            child_chunks = chunk_text(parent_txt, chunk_size=400, overlap=50)
-            for child_txt in child_chunks:
-                if child_txt.strip():
-                    chunks_with_metadata.append({
-                        "page_number": page_num,
-                        "parent_text": parent_txt,
-                        "child_text": child_txt.strip()
-                    })
-        
+        logger.info(f"Parsing PDF layout-aware via pdfplumber: {filename}")
+        with pdfplumber.open(local_path) as pdf:
+            for page_idx, page in enumerate(pdf.pages):
+                page_num = page_idx + 1
+                
+                # Extract tables on the page
+                tables = page.extract_tables()
+                table_texts = []
+                for table in tables:
+                    # Format table cells into simple markdown/csv format
+                    rows_str = []
+                    for row in table:
+                        if row:
+                            # Filter None and convert to string
+                            row_cells = [str(cell).strip() if cell is not None else "" for cell in row]
+                            rows_str.append(" | ".join(row_cells))
+                    if rows_str:
+                        table_txt = "\n".join(rows_str)
+                        table_texts.append(table_txt)
+                        
+                        # Generate chunks for the table
+                        child_chunks = chunk_text(table_txt, chunk_size=400, overlap=50)
+                        for child_txt in child_chunks:
+                            if child_txt.strip():
+                                chunks_with_metadata.append({
+                                    "page_number": page_num,
+                                    "parent_text": table_txt,
+                                    "child_text": child_txt.strip()
+                                })
+                
+                # Extract page text
+                page_txt = page.extract_text()
+                if page_txt:
+                    page_txt = page_txt.strip()
+                    
+                    # Simple text splitting per section / paragraph if possible
+                    paragraphs = page_txt.split("\n\n")
+                    for para in paragraphs:
+                        para = para.strip()
+                        if not para:
+                            continue
+                        
+                        # Generate parent-child chunks
+                        child_chunks = chunk_text(para, chunk_size=400, overlap=50)
+                        for child_txt in child_chunks:
+                            if child_txt.strip():
+                                chunks_with_metadata.append({
+                                    "page_number": page_num,
+                                    "parent_text": para,
+                                    "child_text": child_txt.strip()
+                                })
+
         if os.path.exists(local_path):
             os.remove(local_path)
     except Exception as e:
-        logger.error(f"Error parsing PDF with Docling: {e}")
+        logger.error(f"Error parsing PDF with pdfplumber: {e}")
         if os.path.exists(local_path):
             os.remove(local_path)
-        return {"status": "failed", "error": f"Docling parsing error: {str(e)}"}
+        return {"status": "failed", "error": f"pdfplumber parsing error: {str(e)}"}
     
     if not chunks_with_metadata:
         logger.error("No readable text chunks extracted from PDF.")
