@@ -34,7 +34,7 @@ services:
       - ENGINE_URL=http://engine:8001
       - PORT=8000
     ports:
-      - "8000:8000"
+      - "80:8000"
     depends_on:
       - engine
     restart: always
