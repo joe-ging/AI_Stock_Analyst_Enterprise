@@ -4,27 +4,7 @@ import logging
 import psycopg2
 import redis
 import boto3
-import socket
-import socks
 
-# Global SOCKS5 Proxy Monkey-Patching for outbound traffic (Hugging Face, EasyOCR model downloads)
-# Bypasses the proxy for local docker network container communication.
-try:
-    socks.setdefaultproxy(socks.PROXY_TYPE_SOCKS5, "host.docker.internal", 1080)
-    socket.socket = socks.socksocket
-    original_connect = socket.socket.connect
-
-    def custom_connect(self, address):
-        host, port = address
-        local_hosts = {"db", "cache", "rabbitmq", "etcd", "minio", "milvus", "engine", "gateway", "localhost", "127.0.0.1"}
-        if host in local_hosts or host.startswith("172.18.") or "." not in host:
-            self.set_proxy(None)
-        return original_connect(self, address)
-
-    socket.socket.connect = custom_connect
-    logging.info("SOCKS5 Global proxy monkey-patching applied successfully.")
-except Exception as e:
-    logging.error(f"Failed to apply SOCKS5 global proxy monkey-patch: {e}")
 
 from celery import Celery
 from google import genai
