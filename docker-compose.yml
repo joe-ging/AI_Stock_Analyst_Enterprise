@@ -21,8 +21,13 @@ services:
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/postgres
+      - HTTP_PROXY=socks5://host.docker.internal:1080
+      - HTTPS_PROXY=socks5://host.docker.internal:1080
+      - ALL_PROXY=socks5://host.docker.internal:1080
     ports:
       - "8001:8001"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - db
     restart: always
