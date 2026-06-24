@@ -191,7 +191,7 @@ def ingest_pdf_task(filename: str, doc_id: int):
             
             response = client.models.embed_content(
                 model="gemini-embedding-2",
-                contents=texts,
+                contents=[types.Content(parts=[types.Part.from_text(text=t)]) for t in texts],
                 config=types.EmbedContentConfig(output_dimensionality=768)
             )
             
