@@ -6,6 +6,7 @@ import psycopg2
 import uvicorn
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from google import genai
+from google.genai import types
 from io import BytesIO
 from PyPDF2 import PdfReader
 
@@ -114,10 +115,11 @@ async def ingest_document(file: UploadFile = File(...)):
         for i in range(0, len(chunks), batch_size):
             batch_chunks = chunks[i:i+batch_size]
             
-            # Embed content
+            # Embed content using gemini-embedding-2 with 768 dimensions
             response = client.models.embed_content(
-                model="text-embedding-004",
-                contents=batch_chunks
+                model="gemini-embedding-2",
+                contents=batch_chunks,
+                config=types.EmbedContentConfig(output_dimensionality=768)
             )
             
             # Insert into database
@@ -184,8 +186,9 @@ async def query_rag(
         # 3. Query embedding
         query_text = prompts.get(analysis_type, "Analyze this report")
         emb_response = client.models.embed_content(
-            model="text-embedding-004",
-            contents=query_text
+            model="gemini-embedding-2",
+            contents=query_text,
+            config=types.EmbedContentConfig(output_dimensionality=768)
         )
         query_vector = emb_response.embeddings[0].values
         query_vector_str = "[" + ",".join(map(str, query_vector)) + "]"
