@@ -3,6 +3,7 @@ import time
 import logging
 import gc
 import psycopg2
+import uvicorn
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from google import genai
 from io import BytesIO
@@ -216,19 +217,12 @@ async def query_rag(
             f"[RETIREVED CONTEXT FROM SEC 10-K FILING]:\n{retrieved_context}"
         )
 
-        # Dual-path fallback
-        try:
-            interaction = client.interactions.create(
-                model="gemini-2.5-flash",
-                input=final_prompt
-            )
-            analysis_result = interaction.outputs[-1].text
-        except Exception:
-            response = client.models.generate_content(
-                model="gemini-1.5-flash",
-                contents=final_prompt
-            )
-            analysis_result = response.text
+        # Generate content using Gemini 2.5 Flash
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=final_prompt
+        )
+        analysis_result = response.text
 
         return {"analysis": analysis_result}
     except HTTPException:
@@ -239,3 +233,6 @@ async def query_rag(
     finally:
         cur.close()
         conn.close()
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8001)
