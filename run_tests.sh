@@ -3,7 +3,7 @@ set -e
 
 echo "=== Checking if Engine Container is Running ==="
 for i in {1..30}; do
-  if docker ps | grep enterprise-rag-engine | grep -q "healthy\|up"; then
+  if docker ps | grep enterprise-rag-engine | grep -iq "healthy\|up"; then
     echo "Engine container is ready!"
     break
   fi

@@ -134,3 +134,115 @@ def test_query_endpoint(mock_collection_cls, mock_init_cache, mock_milvus_conn, 
         assert data["citations"][0]["chunk_index"] == 5
         assert "revenues grew by 15%" in data["citations"][0]["text"]
 
+
+@patch('main.get_db_connection')
+@patch('main.get_milvus_connection')
+@patch('main.init_cache_collection')
+@patch('main.Collection')
+@patch('main.call_deepseek')
+def test_query_endpoint_gemini_fails_deepseek_succeeds(mock_call_ds, mock_collection_cls, mock_init_cache, mock_milvus_conn, mock_db_conn):
+    # 1. Mock DB
+    mock_conn = MagicMock()
+    mock_cur = MagicMock()
+    mock_cur.fetchone.return_value = [100]
+    mock_db_conn.return_value = mock_conn
+    mock_conn.cursor.return_value = mock_cur
+
+    # 2. Mock Embeddings
+    mock_emb_res = MagicMock()
+    mock_emb_res.embeddings = [MagicMock(values=[0.1] * 768)]
+
+    # 3. Mock Milvus Chunks Search Results
+    mock_chunk = MagicMock()
+    mock_chunk.entity.get.side_effect = lambda field: {
+        "page_number": 3,
+        "parent_text": "Sample text",
+        "child_text": "Sample"
+    }[field]
+    mock_collection = MagicMock()
+    mock_collection.search.return_value = [[mock_chunk]]
+    mock_collection_cls.return_value = mock_collection
+    
+    mock_cache_col = MagicMock()
+    mock_cache_col.search.return_value = []
+    mock_init_cache.return_value = mock_cache_col
+
+    # 4. Mock DeepSeek Success Response
+    mock_call_ds.return_value = "This is DeepSeek backup report response"
+
+    # Set DeepSeek key to mock active
+    with patch('main.DEEPSEEK_API_KEY', 'some_key'), \
+         patch('main.client.models.embed_content', return_value=mock_emb_res), \
+         patch('main.client.models.generate_content', side_effect=Exception("Gemini connection timed out")), \
+         patch('main.redis_client') as mock_redis:
+        
+        mock_redis.get.return_value = None
+
+        response = client.post(
+            "/query",
+            data={
+                "filename": "dummy.pdf",
+                "analysis_type": "comprehensive",
+                "language": "en"
+            }
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert "DeepSeek backup report" in data["analysis"]
+        assert mock_call_ds.call_count == 2 # Called for draft AND audit
+
+@patch('main.get_db_connection')
+@patch('main.get_milvus_connection')
+@patch('main.init_cache_collection')
+@patch('main.Collection')
+@patch('main.call_deepseek')
+def test_query_endpoint_both_fail(mock_call_ds, mock_collection_cls, mock_init_cache, mock_milvus_conn, mock_db_conn):
+    # 1. Mock DB
+    mock_conn = MagicMock()
+    mock_cur = MagicMock()
+    mock_cur.fetchone.return_value = [100]
+    mock_db_conn.return_value = mock_conn
+    mock_conn.cursor.return_value = mock_cur
+
+    # 2. Mock Embeddings
+    mock_emb_res = MagicMock()
+    mock_emb_res.embeddings = [MagicMock(values=[0.1] * 768)]
+
+    # 3. Mock Milvus Chunks Search Results
+    mock_chunk = MagicMock()
+    mock_chunk.entity.get.side_effect = lambda field: {
+        "page_number": 3,
+        "parent_text": "Sample text",
+        "child_text": "Sample"
+    }[field]
+    mock_collection = MagicMock()
+    mock_collection.search.return_value = [[mock_chunk]]
+    mock_collection_cls.return_value = mock_collection
+    
+    mock_cache_col = MagicMock()
+    mock_cache_col.search.return_value = []
+    mock_init_cache.return_value = mock_cache_col
+
+    # 4. Mock DeepSeek Failure
+    mock_call_ds.side_effect = Exception("DeepSeek rate limited")
+
+    with patch('main.DEEPSEEK_API_KEY', 'some_key'), \
+         patch('main.client.models.embed_content', return_value=mock_emb_res), \
+         patch('main.client.models.generate_content', side_effect=Exception("Gemini failed")), \
+         patch('main.redis_client') as mock_redis:
+        
+        mock_redis.get.return_value = None
+
+        # Verify that error is propagated as a server error
+        response = client.post(
+            "/query",
+            data={
+                "filename": "dummy.pdf",
+                "analysis_type": "comprehensive",
+                "language": "en"
+            }
+        )
+        assert response.status_code == 500
+
+
