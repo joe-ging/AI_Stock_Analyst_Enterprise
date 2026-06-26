@@ -67,7 +67,7 @@ def test_ingest_document_cache_hit(mock_collection_cls, mock_has_collection, moc
     
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "success"
+    assert data["status"] == "skipped"
     assert "skipped" in data["detail"].lower()
 
 @patch('main.get_db_connection')
@@ -99,7 +99,7 @@ def test_query_endpoint(mock_collection_cls, mock_milvus_conn, mock_db_conn):
 
     # 4. Mock Gemini Content Generation (Cascade)
     mock_gen_res = MagicMock()
-    mock_gen_res.text = "Based on our analysis, the company's revenues grew by 15%."
+    mock_gen_res.text = "Based on our analysis, the company's revenues grew by 15."
 
     # Patch the main.client and main.redis_client
     with patch('main.client.models.embed_content', return_value=mock_emb_res), \
@@ -109,12 +109,11 @@ def test_query_endpoint(mock_collection_cls, mock_milvus_conn, mock_db_conn):
         # Simulate Cache Miss (Redis returns None)
         mock_redis.get.return_value = None
 
-        # Trigger POST /query
+        # Trigger POST /query as Form Data
         response = client.post(
             "/query",
-            json={
+            data={
                 "filename": "dummy.pdf",
-                "query": "What is the revenue growth?",
                 "analysis_type": "comprehensive",
                 "language": "zh_cn"
             }
@@ -124,7 +123,7 @@ def test_query_endpoint(mock_collection_cls, mock_milvus_conn, mock_db_conn):
         assert response.status_code == 200
         data = response.json()
         assert data["cache_hit"] is False
-        assert "revenue" in data["answer"].lower() or "revenue" in data["answer"]
+        assert "grew by 15" in data["answer"]
         assert len(data["citations"]) > 0
         assert data["citations"][0]["chunk_index"] == 5
         assert "revenues grew by 15%" in data["citations"][0]["text"]
