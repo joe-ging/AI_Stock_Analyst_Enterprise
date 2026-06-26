@@ -129,7 +129,7 @@ def test_query_endpoint(mock_collection_cls, mock_init_cache, mock_milvus_conn, 
         assert response.status_code == 200
         data = response.json()
         assert data["cache_hit"] is False
-        assert "grew by 15" in data["answer"]
+        assert "grew by 15" in data["analysis"]
         assert len(data["citations"]) > 0
         assert data["citations"][0]["chunk_index"] == 5
         assert "revenues grew by 15%" in data["citations"][0]["text"]
