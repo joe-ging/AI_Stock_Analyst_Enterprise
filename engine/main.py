@@ -10,6 +10,7 @@ import asyncio
 import uuid
 import boto3
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+import httpx
 from google import genai
 from google.genai import types
 from io import BytesIO
@@ -23,6 +24,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger("RAG-Engine")
 
 API_KEY = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@db:5432/postgres")
 REDIS_URL = os.environ.get("REDIS_URL", "redis://cache:6379/0")
 
@@ -37,6 +39,28 @@ s3_secret = os.environ.get("S3_SECRET_ACCESS_KEY", "minioadmin")
 
 app = FastAPI()
 client = genai.Client(api_key=API_KEY)
+
+def call_deepseek(prompt: str, model: str = "deepseek-chat") -> str:
+    if not DEEPSEEK_API_KEY:
+        raise ValueError("DEEPSEEK_API_KEY is not configured")
+    
+    url = "https://api.deepseek.com/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.2
+    }
+    
+    with httpx.Client(timeout=60.0) as cl:
+        response = cl.post(url, headers=headers, json=payload)
+        response.raise_for_status()
+        return response.json()["choices"][0]["message"]["content"]
 
 # Connect to Redis
 redis_client = None
@@ -358,14 +382,27 @@ async def query_rag(
         f"[RETRIEVED DATA FROM SEC 10-K FILING]:\n{retrieved_context}"
     )
 
-    # Initial Draft by Gemini 2.5 Flash
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=final_prompt
-    )
-    draft_result = response.text
+    # Initial Draft by Gemini 2.5 Flash with DeepSeek fallback
+    try:
+        logger.info("Generating initial draft using Gemini 2.5 Flash...")
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=final_prompt
+        )
+        draft_result = response.text
+    except Exception as gemini_err:
+        logger.warning(f"Gemini 2.5 Flash generation failed: {gemini_err}")
+        if DEEPSEEK_API_KEY:
+            logger.info("Falling back to DeepSeek (deepseek-chat) for draft generation...")
+            try:
+                draft_result = call_deepseek(final_prompt, model="deepseek-chat")
+            except Exception as ds_err:
+                logger.error(f"DeepSeek fallback also failed: {ds_err}")
+                raise gemini_err
+        else:
+            raise gemini_err
     
-    # Audit & Final Polish by Gemini 2.5 Pro (Model Cascade)
+    # Audit & Final Polish by Gemini 2.5 Pro (Model Cascade) with DeepSeek fallback
     logger.info("Cascading to Gemini 2.5 Pro for Auditor sanity check & factual verification...")
     audit_prompt = (
         f"You are a Senior Financial Audit Agent. Review the following draft report against the original source context. "
@@ -375,11 +412,24 @@ async def query_rag(
         f"[DRAFT REPORT]:\n{draft_result}"
     )
     
-    pro_response = client.models.generate_content(
-        model="gemini-2.5-pro",
-        contents=audit_prompt
-    )
-    final_report = pro_response.text
+    try:
+        pro_response = client.models.generate_content(
+            model="gemini-2.5-pro",
+            contents=audit_prompt
+        )
+        final_report = pro_response.text
+    except Exception as gemini_err:
+        logger.warning(f"Gemini 2.5 Pro generation failed: {gemini_err}")
+        if DEEPSEEK_API_KEY:
+            logger.info("Falling back to DeepSeek (deepseek-chat) for audit & polish...")
+            try:
+                final_report = call_deepseek(audit_prompt, model="deepseek-chat")
+            except Exception as ds_err:
+                logger.error(f"DeepSeek audit fallback also failed: {ds_err}")
+                raise gemini_err
+        else:
+            raise gemini_err
+    
     logger.info("LangGraph agent loop successfully completed.")
 
     # 4. Save to Redis and register in Semantic Cache Index

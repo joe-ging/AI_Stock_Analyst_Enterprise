@@ -184,7 +184,11 @@ def ingest_pdf_task(filename: str, doc_id: int):
     batch_size = 15
     embeddings_list = []
     
+    texts = [item["child_text"] for item in chunks_with_metadata]
+    
     try:
+        for i in range(0, len(texts), batch_size):
+            batch_texts = texts[i:i+batch_size]
             # Embed child chunks for indexing with exponential backoff retries
             max_retries = 5
             response = None
@@ -192,7 +196,7 @@ def ingest_pdf_task(filename: str, doc_id: int):
                 try:
                     response = client.models.embed_content(
                         model="gemini-embedding-2",
-                        contents=[types.Content(parts=[types.Part.from_text(text=t)]) for t in texts],
+                        contents=[types.Content(parts=[types.Part.from_text(text=t)]) for t in batch_texts],
                         config=types.EmbedContentConfig(output_dimensionality=768)
                     )
                     break
