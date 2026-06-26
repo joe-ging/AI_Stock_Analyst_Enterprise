@@ -185,21 +185,28 @@ def ingest_pdf_task(filename: str, doc_id: int):
     embeddings_list = []
     
     try:
-        # Embed child chunks for indexing
-        for idx in range(0, len(chunks_with_metadata), batch_size):
-            batch = chunks_with_metadata[idx:idx+batch_size]
-            texts = [item["child_text"] for item in batch]
-            
-            response = client.models.embed_content(
-                model="gemini-embedding-2",
-                contents=[types.Content(parts=[types.Part.from_text(text=t)]) for t in texts],
-                config=types.EmbedContentConfig(output_dimensionality=768)
-            )
+            # Embed child chunks for indexing with exponential backoff retries
+            max_retries = 5
+            response = None
+            for attempt in range(max_retries):
+                try:
+                    response = client.models.embed_content(
+                        model="gemini-embedding-2",
+                        contents=[types.Content(parts=[types.Part.from_text(text=t)]) for t in texts],
+                        config=types.EmbedContentConfig(output_dimensionality=768)
+                    )
+                    break
+                except Exception as api_err:
+                    if attempt == max_retries - 1:
+                        raise api_err
+                    wait_time = (2 ** attempt) + 1.0
+                    logger.warning(f"Embedding API transient error: {api_err}. Retrying in {wait_time}s... (Attempt {attempt+1}/{max_retries})")
+                    time.sleep(wait_time)
             
             for embedding_obj in response.embeddings:
                 embeddings_list.append(embedding_obj.values)
             
-            time.sleep(0.1)
+            time.sleep(0.15)
     except Exception as e:
         logger.error(f"Gemini embedding batch generation failed: {e}")
         return {"status": "failed", "error": f"Embedding API error: {str(e)}"}
