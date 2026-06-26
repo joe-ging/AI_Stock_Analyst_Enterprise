@@ -227,6 +227,7 @@ def test_query_endpoint_both_fail(mock_call_ds, mock_collection_cls, mock_init_c
     # 4. Mock DeepSeek Failure
     mock_call_ds.side_effect = Exception("DeepSeek rate limited")
 
+    local_client = TestClient(app, raise_server_exceptions=False)
     with patch('main.DEEPSEEK_API_KEY', 'some_key'), \
          patch('main.client.models.embed_content', return_value=mock_emb_res), \
          patch('main.client.models.generate_content', side_effect=Exception("Gemini failed")), \
@@ -235,7 +236,7 @@ def test_query_endpoint_both_fail(mock_call_ds, mock_collection_cls, mock_init_c
         mock_redis.get.return_value = None
 
         # Verify that error is propagated as a server error
-        response = client.post(
+        response = local_client.post(
             "/query",
             data={
                 "filename": "dummy.pdf",
