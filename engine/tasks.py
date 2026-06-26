@@ -10,7 +10,8 @@ from celery import Celery
 from google import genai
 from google.genai import types
 from pymilvus import connections, utility, FieldSchema, CollectionSchema, DataType, Collection
-from docling.document_converter import DocumentConverter
+
+
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("Celery-Worker")
