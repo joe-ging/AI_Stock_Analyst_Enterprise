@@ -68,12 +68,13 @@ def test_ingest_document_cache_hit(mock_collection_cls, mock_has_collection, moc
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "skipped"
-    assert "skipped" in data["detail"].lower()
+    assert data["document_id"] == 100
 
 @patch('main.get_db_connection')
 @patch('main.get_milvus_connection')
+@patch('main.init_cache_collection')
 @patch('main.Collection')
-def test_query_endpoint(mock_collection_cls, mock_milvus_conn, mock_db_conn):
+def test_query_endpoint(mock_collection_cls, mock_init_cache, mock_milvus_conn, mock_db_conn):
     # 1. Mock Database to return doc_id = 100
     mock_conn = MagicMock()
     mock_cur = MagicMock()
@@ -96,6 +97,7 @@ def test_query_endpoint(mock_collection_cls, mock_milvus_conn, mock_db_conn):
     mock_collection = MagicMock()
     mock_collection.search.return_value = [[mock_chunk]]
     mock_collection_cls.return_value = mock_collection
+    mock_init_cache.return_value = mock_collection
 
     # 4. Mock Gemini Content Generation (Cascade)
     mock_gen_res = MagicMock()
