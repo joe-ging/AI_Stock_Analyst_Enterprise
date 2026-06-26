@@ -97,7 +97,11 @@ def test_query_endpoint(mock_collection_cls, mock_init_cache, mock_milvus_conn, 
     mock_collection = MagicMock()
     mock_collection.search.return_value = [[mock_chunk]]
     mock_collection_cls.return_value = mock_collection
-    mock_init_cache.return_value = mock_collection
+    
+    # Cache collection mock to simulate cache miss
+    mock_cache_col = MagicMock()
+    mock_cache_col.search.return_value = []
+    mock_init_cache.return_value = mock_cache_col
 
     # 4. Mock Gemini Content Generation (Cascade)
     mock_gen_res = MagicMock()
