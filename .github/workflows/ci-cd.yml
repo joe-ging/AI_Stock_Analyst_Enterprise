@@ -1,0 +1,70 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Run Unit Tests (CI)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Create Dummy environment file
+        run: |
+          echo "GEMINI_API_KEY=dummy_key_for_testing" > .env
+
+      - name: Build and Start Containers
+        run: |
+          docker-compose up -d --build db cache rabbitmq etcd minio milvus engine
+
+      - name: Wait for Engine Container to be Ready
+        run: |
+          echo "Waiting for engine container to be healthy..."
+          for i in {1..30}; do
+            if docker ps | grep enterprise-rag-engine | grep -q "healthy\|up"; then
+              echo "Engine container is up!"
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Run Pytest in Engine Container
+        run: |
+          docker-compose exec -T engine pytest test_main.py -v
+
+      - name: Teardown Containers
+        if: always()
+        run: |
+          docker-compose down -v
+
+  deploy:
+    name: Deploy to Tencent Cloud (CD)
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Deploy to Remote Server via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.TENCENT_HOST }}
+          username: ${{ secrets.TENCENT_USER }}
+          key: ${{ secrets.TENCENT_SSH_KEY }}
+          port: 22
+          script: |
+            cd ~/AI_Stock_Analyst_Enterprise
+            # Pull latest changes
+            git pull origin main
+            # Rebuild and start container services
+            docker-compose up -d --build engine worker gateway
+            # Run post-deployment validation tests
+            ./run_tests.sh
