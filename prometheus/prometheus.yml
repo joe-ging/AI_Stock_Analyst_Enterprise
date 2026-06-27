@@ -2,7 +2,8 @@ global:
   scrape_interval: 5s
 
 scrape_configs:
-  - job_name: 'fastapi_engine'
+  - job_name: 'fastapi_engine_remote'
     metrics_path: '/metrics'
     static_configs:
-      - targets: ['engine:8001']
+      # We are now scraping the remote Tencent Cloud (Data Plane) from the AWS Sydney Cloud (Control Plane)
+      - targets: ['43.129.249.161:8001']
