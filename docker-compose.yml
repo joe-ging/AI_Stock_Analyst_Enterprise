@@ -110,6 +110,7 @@ services:
       - rabbitmq
     volumes:
       - ~/.EasyOCR/model:/root/.EasyOCR/model
+      - ./logs:/app/logs
     healthcheck:
       test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8001/health')"]
       interval: 15s
@@ -149,6 +150,7 @@ services:
       - rabbitmq
     volumes:
       - ~/.EasyOCR/model:/root/.EasyOCR/model
+      - ./logs:/app/logs
     restart: always
 
   gateway:
@@ -161,6 +163,8 @@ services:
       - "80:8000"
     depends_on:
       - engine
+    volumes:
+      - ./logs:/app/logs
     restart: always
 
 volumes:

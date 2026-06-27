@@ -4,12 +4,20 @@ import httpx
 import uvicorn
 import json
 import asyncio
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
 
 # --- 0. Logging Configuration ---
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+os.makedirs("/app/logs", exist_ok=True)
+logging.basicConfig(
+    level=logging.INFO, 
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("/app/logs/gateway.log", encoding="utf-8")
+    ]
+)
 logger = logging.getLogger("API-Gateway")
 
 ENGINE_URL = os.environ.get("ENGINE_URL", "http://engine:8001")
@@ -52,11 +60,13 @@ async def health():
 
 @app.post("/analyze")
 async def analyze_document(
+    request: Request,
     file: UploadFile = File(...), 
     analysis_type: str = Form(...),
     language: str = Form(...)
 ):
-    logger.info(f"Gateway received request: {file.filename} | Type: {analysis_type} | Lang: {language}")
+    client_ip = request.client.host if request.client else "unknown"
+    logger.info(f"Gateway received request: {file.filename} | Type: {analysis_type} | Lang: {language} | IP: {client_ip}")
 
     async with httpx.AsyncClient(timeout=600.0, trust_env=False) as client:
         # Step 1: Forward file to engine for RAG ingestion
@@ -84,7 +94,8 @@ async def analyze_document(
             query_data = {
                 "filename": file.filename,
                 "analysis_type": analysis_type,
-                "language": language
+                "language": language,
+                "client_ip": client_ip
             }
             query_resp = await client.post(f"{ENGINE_URL}/query", data=query_data)
             
@@ -102,6 +113,7 @@ async def analyze_document(
 
 @app.post("/analyze/stream")
 async def analyze_document_stream(
+    request: Request,
     file: UploadFile = File(None),
     analysis_type: str = Form(...),
     language: str = Form(...),
@@ -110,7 +122,8 @@ async def analyze_document_stream(
     years: str = Form(None)
 ):
     """Streaming endpoint — supports PDF local upload or SEC EDGAR ticker mode"""
-    logger.info(f"Gateway streaming: mode={upload_mode} | type={analysis_type} | lang={language}")
+    client_ip = request.client.host if request.client else "unknown"
+    logger.info(f"Gateway streaming: mode={upload_mode} | type={analysis_type} | lang={language} | IP: {client_ip}")
 
     filename = "edgar_query"
 
@@ -145,7 +158,8 @@ async def analyze_document_stream(
                 "language": language,
                 "upload_mode": upload_mode,
                 "ticker": ticker or "",
-                "years": years or ""
+                "years": years or "",
+                "client_ip": client_ip
             }
             async with client.stream("POST", f"{ENGINE_URL}/query/stream", data=query_data) as resp:
                 if resp.status_code == 307:

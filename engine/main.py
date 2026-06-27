@@ -23,7 +23,15 @@ from pymilvus import connections, utility, FieldSchema, CollectionSchema, DataTy
 from tasks import ingest_pdf_task
 
 # --- 0. Logging Configuration ---
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+os.makedirs("/app/logs", exist_ok=True)
+logging.basicConfig(
+    level=logging.INFO, 
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("/app/logs/engine.log", encoding="utf-8")
+    ]
+)
 logger = logging.getLogger("RAG-Engine")
 
 API_KEY = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
@@ -599,6 +607,7 @@ async def query_rag(
     filename: str = Form(...),
     analysis_type: str = Form(...),
     language: Language = Form(Language.en),
+    client_ip: str = Form("unknown")
 ):
     if EMBEDDING_PROVIDER == "openainext" and not OPENAINEXT_API_KEY:
         raise HTTPException(status_code=500, detail="OpenAINext API Key missing on Engine")
@@ -832,8 +841,8 @@ async def query_rag(
     cur = conn.cursor()
     try:
         cur.execute(
-            "INSERT INTO query_logs (document_ids, target_query, language, output_text, inference_time_ms) VALUES (%s, %s, %s, %s, %s);",
-            (filename, target_query, language.value, final_report, output_data["inference_time_ms"])
+            "INSERT INTO query_logs (client_ip, document_ids, target_query, language, output_text, inference_time_ms) VALUES (%s, %s, %s, %s, %s, %s);",
+            (client_ip, filename, target_query, language.value, final_report, output_data["inference_time_ms"])
         )
         conn.commit()
     except Exception as e:
@@ -1076,7 +1085,8 @@ async def query_rag_stream(
     language: Language = Form(...),
     upload_mode: str = Form("pdf"),
     ticker: str = Form(None),
-    years: str = Form(None)
+    years: str = Form(None),
+    client_ip: str = Form("unknown")
 ):
     """Streaming SSE endpoint — tokens are pushed to client as they are generated"""
     if not DEEPSEEK_API_KEY:
@@ -1278,8 +1288,8 @@ async def query_rag_stream(
         cur = conn.cursor()
         try:
             cur.execute(
-                "INSERT INTO query_logs (document_ids, target_query, language, output_text, ragas_scores, inference_time_ms) VALUES (%s, %s, %s, %s, %s, %s);",
-                (ctx_filename, target_query, language.value, final_report_text, json.dumps(ragas_scores) if ragas_scores else None, output_data["inference_time_ms"])
+                "INSERT INTO query_logs (client_ip, document_ids, target_query, language, output_text, ragas_scores, inference_time_ms) VALUES (%s, %s, %s, %s, %s, %s, %s);",
+                (client_ip, ctx_filename, target_query, language.value, final_report_text, json.dumps(ragas_scores) if ragas_scores else None, output_data["inference_time_ms"])
             )
             conn.commit()
             logger.info("[Stream] Saved query to query_logs table.")
