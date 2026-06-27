@@ -739,7 +739,7 @@ async def _build_rag_context(filename: str, analysis_type: str, language: str):
     if not template:
         raise HTTPException(status_code=400, detail=f"Invalid analysis_type: {analysis_type}")
     target_query = template["query"]
-    
+    logger.info(f"[DEBUG] _build_rag_context: Query template found, embedding query text: {target_query[:60]}...")
     # Embed query
     emb_query_res = client.models.embed_content(
         model="gemini-embedding-2",
@@ -747,6 +747,7 @@ async def _build_rag_context(filename: str, analysis_type: str, language: str):
         config=types.EmbedContentConfig(output_dimensionality=768)
     )
     query_vector = emb_query_res.embeddings[0].values
+    logger.info("[DEBUG] _build_rag_context: Embedding successful. Querying Milvus semantic cache...")
     
     # Check semantic cache
     cache_collection = init_cache_collection()
@@ -776,6 +777,7 @@ async def _build_rag_context(filename: str, analysis_type: str, language: str):
         return_db_connection(conn)
     
     target_lang = LANG_MAP.get(language, "English")
+    logger.info(f"[DEBUG] _build_rag_context: Retreiving doc chunks from Milvus for doc_id={doc_id}...")
     
     # Parallel retrieval using generic sub-queries
     get_milvus_connection()
@@ -849,7 +851,9 @@ async def query_rag_stream(
         raise HTTPException(status_code=500, detail="Streaming requires DeepSeek API Key")
     
     start_time = time.time()
+    logger.info(f"[DEBUG] query_rag_stream: Endpoint hit for {filename}. Building RAG context...")
     ctx = await _build_rag_context(filename, analysis_type.value, language.value)
+    logger.info(f"[DEBUG] query_rag_stream: Context built successfully (is_none={ctx is None}). Starting SSE generator...")
     
     if ctx is None:
         # Cache hit — not streamable, redirect to regular endpoint
