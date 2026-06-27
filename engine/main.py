@@ -147,9 +147,10 @@ LANG_MAP = {
     "zh_hk": "Traditional Chinese (繁體中文)"
 }
 
-def build_citation_instruction(filename: str) -> str:
-    """Generates a generic citation format instruction based on the uploaded filename."""
+def build_citation_instruction(company_name: str, doc_year: str) -> str:
+    """Generates a generic citation format instruction based on the uploaded filename and company metadata."""
     return (
+        f"CONTEXT: You are analyzing the {doc_year} financial report for {company_name}.\n"
         f"MANDATORY CITATION DENSITY RULE: For EVERY single financial figure, revenue number, margin, percentage, date, "
         f"or factual claim you output in this report, you MUST immediately append its original page source in the format '[Page X]' "
         f"(where X is the actual page number from the retrieved block, e.g., '[Page 15]'). "
@@ -157,15 +158,16 @@ def build_citation_instruction(filename: str) -> str:
         f"Do NOT write any HTML tags like <sup>, and do NOT write any separate 'Citations' or 'References' footer section."
     )
 
-def build_final_prompt(target_query: str, struct_instructions: str, retrieved_context: str, target_lang: str, filename: str) -> str:
+def build_final_prompt(target_query: str, struct_instructions: str, retrieved_context: str, target_lang: str, filename: str, company_name: str, doc_year: str) -> str:
     """Builds the final LLM prompt with citation constraints."""
     language_instruction = (
         f"IMPORTANT: The user has selected {target_lang} as their preferred language. "
         f"You MUST generate the entire report in {target_lang}. Use professional financial terminology."
     )
-    citation_instruction = build_citation_instruction(filename)
+    citation_instruction = build_citation_instruction(company_name, doc_year)
     return (
         f"{language_instruction}\n\n"
+        f"TARGET COMPANY: {company_name} (Year: {doc_year})\n\n"
         f"{target_query}\n\n"
         f"IMPORTANT PROFESSIONAL FINANCIAL REPORTING INSTRUCTIONS:\n"
         f"{struct_instructions}\n\n"
@@ -177,13 +179,14 @@ def build_final_prompt(target_query: str, struct_instructions: str, retrieved_co
         f"[RETRIEVED DATA FROM SEC FILING]:\n{retrieved_context}"
     )
 
-def build_audit_prompt(draft: str, retrieved_context: str, target_lang: str, filename: str) -> str:
+def build_audit_prompt(draft: str, retrieved_context: str, target_lang: str, filename: str, company_name: str, doc_year: str) -> str:
     """Builds the audit prompt for the second-pass LLM review."""
-    citation_instruction = build_citation_instruction(filename)
+    citation_instruction = build_citation_instruction(company_name, doc_year)
     return (
         f"You are a Senior Financial Audit Agent. Review the following draft report against the original source context. "
         f"Ensure that all dates, financial numbers, margins, and page references match the source exactly. "
         f"Correct any misstatements or formatting gaps.\n\n"
+        f"TARGET COMPANY: {company_name} (Year: {doc_year})\n\n"
         f"IMPORTANT AUDIT INSTRUCTIONS:\n"
         f"1. Make sure every single number, percentage, and date has a plain page tag '[Page X]'.\n"
         f"2. Validate that NO page numbers other than those in the retrieved context are cited. Correct any hallucinated page numbers.\n"
@@ -595,12 +598,28 @@ async def query_rag(
     start_time = time.time()
     cache_uuid = None
     
-    # 1. Redis Semantic Cache (Cosine > 0.97 in Milvus cache index)
+    # 1. Retrieve document ID and metadata FIRST to guarantee unique cache keys
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id, company_name, doc_type, doc_year FROM documents WHERE filename = %s;", (filename,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Document not found. Please upload first.")
+        doc_id = row[0]
+        db_company_name = row[1]
+        db_doc_type = row[2]
+        db_doc_year = row[3]
+    finally:
+        cur.close()
+        conn.close()
+    
+    # 2. Redis Semantic Cache (Cosine > 0.97 in Milvus cache index)
     template = REPORT_TEMPLATES[analysis_type.value]
     target_query = template["query"]
     
     # Embed the query to check cache
-    cache_query_key = f"Document: {filename} | Language: {language.value} | Query: {target_query}"
+    cache_query_key = f"Company: {db_company_name} | Year: {db_doc_year} | Language: {language.value} | Query: {target_query}"
     query_vector = await get_embedding(cache_query_key)
     if not query_vector:
         raise HTTPException(status_code=500, detail="Embedding calculation error")
@@ -638,19 +657,6 @@ async def query_rag(
                 logger.error(f"Redis cache fetch failed: {e}")
 
     logger.info("Semantic Cache MISS. Proceeding with vector search and agent loop.")
-
-    # 2. Retrieve document ID
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute("SELECT id FROM documents WHERE filename = %s;", (filename,))
-        row = cur.fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Document not found. Please upload first.")
-        doc_id = row[0]
-    finally:
-        cur.close()
-        conn.close()
 
     # 3. LangGraph Multi-Agent Orchestrator Emulation
     # Node 1: Router Node
@@ -723,7 +729,7 @@ async def query_rag(
     # Node 3: Generator & Auditor Agent (Model Cascade)
     logger.info("LangGraph [Auditor & Generator Node] executing Model Cascade...")
     struct_instructions = template["struct"]
-    final_prompt = build_final_prompt(target_query, struct_instructions, retrieved_context, target_lang, filename)
+    final_prompt = build_final_prompt(target_query, struct_instructions, retrieved_context, target_lang, filename, db_company_name, db_doc_year)
 
     # Initial Draft by DeepSeek (deepseek-chat) with Gemini fallback
     draft_result = None
@@ -758,7 +764,7 @@ async def query_rag(
         logger.info("Quick mode: skipping audit stage for faster output.")
         final_report = draft_result
     else:
-        audit_prompt = build_audit_prompt(draft_result, retrieved_context, target_lang, filename)
+        audit_prompt = build_audit_prompt(draft_result, retrieved_context, target_lang, filename, db_company_name, db_doc_year)
         
         final_report = None
         if DEEPSEEK_API_KEY:
@@ -819,12 +825,29 @@ async def query_rag(
 async def _build_rag_context(filename: str, analysis_type: str, language: str):
     """Shared helper: retrieves context, builds prompts using REPORT_TEMPLATES.
     Returns dict with prompt data, or None if cache hit."""
+    
+    # Retrieve doc_id and metadata FIRST to guarantee unique cache keys
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id, company_name, doc_type, doc_year FROM documents WHERE filename = %s;", (filename,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Document not found.")
+        doc_id = row[0]
+        db_company_name = row[1]
+        db_doc_type = row[2]
+        db_doc_year = row[3]
+    finally:
+        cur.close()
+        return_db_connection(conn)
+
     template = REPORT_TEMPLATES.get(analysis_type)
     if not template:
         raise HTTPException(status_code=400, detail=f"Invalid analysis_type: {analysis_type}")
     target_query = template["query"]
     logger.info(f"[DEBUG] _build_rag_context: Query template found, embedding query text: {target_query[:60]}...")
-    cache_query_key = f"Language: {language} | Query: {target_query}"
+    cache_query_key = f"Company: {db_company_name} | Year: {db_doc_year} | Language: {language} | Query: {target_query}"
     query_vector = await get_embedding(cache_query_key)
     if not query_vector:
         raise HTTPException(status_code=500, detail="Failed to generate embedding for query")
@@ -851,20 +874,6 @@ async def _build_rag_context(filename: str, analysis_type: str, language: str):
                         logger.info(f"[Cache] Language mismatch (cached={cached_json.get('language')}, requested={language}). Forcing regeneration.")
                 except Exception as e:
                     logger.error(f"[Cache] Failed to parse cached data: {e}")
-    
-    # Retrieve doc_id and metadata
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute("SELECT id, company_name, doc_type, doc_year FROM documents WHERE filename = %s;", (filename,))
-        row = cur.fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Document not found.")
-        doc_id = row[0]
-        db_company_name = row[1]
-        db_doc_type = row[2]
-        db_doc_year = row[3]
-    finally:
         cur.close()
         return_db_connection(conn)
     
@@ -911,7 +920,7 @@ async def _build_rag_context(filename: str, analysis_type: str, language: str):
     
     # Build prompts using shared helpers
     struct_instructions = template["struct"]
-    final_prompt = build_final_prompt(target_query, struct_instructions, retrieved_context, target_lang, filename)
+    final_prompt = build_final_prompt(target_query, struct_instructions, retrieved_context, target_lang, filename, db_company_name, db_doc_year)
     
     return {
         "final_prompt": final_prompt,
@@ -962,7 +971,7 @@ async def query_rag_stream(
     db_doc_type = ctx["db_doc_type"]
     db_doc_year = ctx["db_doc_year"]
     # Truncate cache_query_key to 1000 chars (Milvus VARCHAR max is 1024)
-    cache_query_key = f"Language: {language.value} | Query: {target_query}"[:1000]
+    cache_query_key = f"Company: {db_company_name} | Year: {db_doc_year} | Language: {language.value} | Query: {target_query}"[:1000]
     
     async def sse_generator() -> AsyncGenerator[str, None]:
         full_text = ""
