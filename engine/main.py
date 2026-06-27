@@ -966,6 +966,9 @@ async def resolve_document_ids(filename: str):
             company_name = row[1]
             doc_type = row[2]
             doc_years.append(row[3])
+            
+        if not doc_ids:
+            raise ValueError(f"Filing data could not be retrieved from SEC EDGAR or local database for '{filename}'")
     finally:
         cur.close()
         return_db_connection(conn)
