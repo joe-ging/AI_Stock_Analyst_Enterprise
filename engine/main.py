@@ -963,7 +963,7 @@ async def query_rag_stream(
         if redis_client:
             try:
                 redis_client.setex(new_cache_key, 7200, json.dumps(output_data))
-                cache_collection.insert([[target_query], [new_cache_key], [query_vector]])
+                cache_collection.insert([[target_query[:1000]], [new_cache_key], [query_vector]])
                 cache_collection.flush()
                 logger.info(f"[Stream] Cached results: {new_cache_key}")
             except Exception as e:
