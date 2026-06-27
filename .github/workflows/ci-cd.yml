@@ -38,6 +38,15 @@ jobs:
         run: |
           docker-compose exec -T engine pytest test_main.py -v
 
+      - name: Run Ragas Quality Evaluation
+        run: |
+          if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
+            echo "GEMINI_API_KEY is configured. Running Ragas Evaluation..."
+            docker-compose exec -T -e GEMINI_API_KEY="${{ secrets.GEMINI_API_KEY }}" engine python run_eval.py --ci
+          else
+            echo "Skipping Ragas Evaluation: GEMINI_API_KEY secret is not set in GitHub Secrets."
+          fi
+
       - name: Teardown Containers
         if: always()
         run: |
