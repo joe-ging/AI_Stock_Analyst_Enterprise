@@ -74,11 +74,14 @@ REPORT_TEMPLATES = {
     "comprehensive": {
         "role": "Lead Equity Research Analyst",
         "query": (
-            "Prepare an institutional-grade investment memorandum. Structure the report exactly as follows:\n"
+            "Prepare a highly detailed, comprehensive, institutional-grade investment memorandum. Make sure to audit and output the following sections with exhaustive details:\n"
             "0. **REPORT HEADER**: Ticker, Sector, Current Stock Price (with currency), Current Rating (Buy/Hold/Sell), Price Target, and Market Capitalization. Presentation must look like a standard Wall Street analyst report.\n"
-            "1. **EXECUTIVE SUMMARY & INVESTMENT THESIS**: State the investment rating and price target. Detail the core investment thesis and key near-term catalysts.\n"
-            "2. **BUSINESS DESCRIPTION & SEGMENT BREAKDOWN**: Analyze the business model, reportable segments, and key revenue drivers. Use markdown tables to compare segment net revenues and operating income trends across fiscal years.\n"
-            "3. **FINANCIAL PERFORMANCE & CASH FLOW AUDIT**: Deep dive into profit margins (Operating Margin, EBITDA trend), balance sheet leverage, capital expenditures, and free cash flow generation.\n"
+            "1. **EXECUTIVE SUMMARY & INVESTMENT THESIS**: State the investment rating and price target. Detail the core investment thesis, near-term catalysts, and investment summary.\n"
+            "2. **BUSINESS DESCRIPTION & SEGMENT BREAKDOWN**: Analyze the business model, reportable segments, and key revenue drivers. You MUST provide a markdown comparison table displaying Segment Net Revenues and Segment Operating Income trends across the last three fiscal years.\n"
+            "3. **FINANCIAL PERFORMANCE & CASH FLOW AUDIT**: Deep dive into profit margins (Operating Margin, EBITDA trend). You MUST provide three separate markdown tables:\n"
+            "   - **Table A: Income Statement Audit**: Revenue, Cost of Revenues, Selling/Marketing expenses, R&D expenses, G&A expenses, Operating Income, and Net Income.\n"
+            "   - **Table B: Balance Sheet Audit**: Cash & Cash Equivalents, Term Deposits, Short-term Investments, Total Assets, Total Liabilities, and Total Shareholders' Equity.\n"
+            "   - **Table C: Cash Flow Audit**: Net cash provided by operating activities, Net cash used in investing activities, and Net cash used in financing activities.\n"
             "4. **VALUATION, LEVEL 3 ASSETS & CAPITAL STRUCTURE AUDIT**: Audit the valuation methodologies (e.g., DCF model inputs, comparable multiples), unobservable inputs for Level 3 assets, and critical tax considerations (specifically PFIC classification status and cross-border tax treatment).\n"
             "5. **KEY INVESTMENT RISKS & MITIGATION MATRIX**: Provide a graded matrix table (High/Medium/Low impact) evaluating regulatory, geopolitical, competitive, and operational risks alongside specific mitigation factors.\n"
             "6. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
