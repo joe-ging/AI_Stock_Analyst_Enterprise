@@ -631,9 +631,12 @@ async def query_rag(
                 if cached_data:
                     logger.info(f"Semantic Cache HIT (Score: {similarity:.4f}) for key: {matched_key}")
                     result = json.loads(cached_data.decode("utf-8"))
-                    result["cache_hit"] = True
-                    result["inference_time_ms"] = int((time.time() - start_time) * 1000)
-                    return result
+                    if result.get("language") == language.value:
+                        result["cache_hit"] = True
+                        result["inference_time_ms"] = int((time.time() - start_time) * 1000)
+                        return result
+                    else:
+                        logger.info(f"Cache language mismatch: requested {language.value}, cached {result.get('language')}. Forcing miss.")
             except Exception as e:
                 logger.error(f"Redis cache fetch failed: {e}")
 
@@ -795,6 +798,7 @@ async def query_rag(
         "citations": citations,
         "retrieved_context": retrieved_context,
         "cache_hit": False,
+        "language": language.value,
         "inference_time_ms": int((time.time() - start_time) * 1000)
     }
     
@@ -805,7 +809,7 @@ async def query_rag(
             redis_client.setex(new_cache_key, 7200, json.dumps(output_data))
             
             # Index vector in Milvus
-            cache_collection.insert([[target_query], [new_cache_key], [query_vector]])
+            cache_collection.insert([[cache_query_key], [new_cache_key], [query_vector]])
             cache_collection.flush()
             logger.info(f"Saved query results to Redis and indexed query in Milvus cache: {new_cache_key}")
         except Exception as e:
@@ -842,7 +846,14 @@ async def _build_rag_context(filename: str, analysis_type: str, language: str):
         if match.distance >= 0.97 and redis_client:
             cached_data = redis_client.get(match.entity.get("cache_key"))
             if cached_data:
-                return None  # Signal: cache hit
+                try:
+                    cached_json = json.loads(cached_data.decode("utf-8") if isinstance(cached_data, bytes) else cached_data)
+                    if cached_json.get("language") == language:
+                        return None  # Signal: cache hit only if language matches
+                    else:
+                        logger.info(f"[Cache] Language mismatch (cached={cached_json.get('language')}, requested={language}). Forcing regeneration.")
+                except Exception as e:
+                    logger.error(f"[Cache] Failed to parse cached data: {e}")
     
     # Retrieve doc_id
     conn = get_db_connection()
@@ -941,6 +952,7 @@ async def query_rag_stream(
     query_vector = ctx["query_vector"]
     cache_collection = ctx["cache_collection"]
     ctx_filename = ctx["filename"]
+    cache_query_key = f"Language: {language.value} | Query: {target_query}"
     
     async def sse_generator() -> AsyncGenerator[str, None]:
         full_text = ""
@@ -976,13 +988,14 @@ async def query_rag_stream(
             "citations": citations,
             "retrieved_context": retrieved_context,
             "cache_hit": False,
+            "language": language.value,
             "inference_time_ms": int((time.time() - start_time) * 1000)
         }
         new_cache_key = f"analysis_cache_store:{uuid.uuid4()}"
         if redis_client:
             try:
                 redis_client.setex(new_cache_key, 7200, json.dumps(output_data))
-                cache_collection.insert([[target_query[:1000]], [new_cache_key], [query_vector]])
+                cache_collection.insert([[cache_query_key], [new_cache_key], [query_vector]])
                 cache_collection.flush()
                 logger.info(f"[Stream] Cached results: {new_cache_key}")
             except Exception as e:
