@@ -378,11 +378,16 @@ async def query_rag(
     final_prompt = (
         f"{language_instruction}\n\n"
         f"{target_query}\n\n"
-        f"IMPORTANT CITATION REQUIREMENTS:\n"
-        f"1. For every single financial figure, amount, rate, date, or key statistic you mention, you MUST append a sequential superscript footnote number (e.g. <sup>1</sup>, <sup>2</sup>).\n"
-        f"2. At the very end of the report, you MUST add a 'Citations / References' section listing the sources for all footnotes in the following classic corporate finance citation format:\n"
-        f"   [Footnote Number] New Oriental Education & Technology Group Inc., Annual Report (Form 20-F) for the Fiscal Year Ended May 31, 2025, at [Page Number].\n"
-        f"3. You MUST base your analysis strictly on the retrieved context. Use actual fiscal years (current year is 2026).\n\n"
+        f"IMPORTANT PROFESSIONAL FINANCIAL REPORTING INSTRUCTIONS:\n"
+        f"You are a Lead Equity Research Analyst. You are preparing an institutional-grade investment memorandum for executive leadership. The report must be highly professional, avoiding generic filler, and structured exactly as follows:\n\n"
+        f"1. **EXECUTIVE SUMMARY & INVESTMENT THESIS**: State the rating (Buy/Hold/Sell) and the core justification.\n"
+        f"2. **FINANCIAL PERFORMANCE & TREND AUDIT**: Analyze revenues, margins, and cash flow trends. Use tables if appropriate.\n"
+        f"3. **KEY INVESTMENT RISKS & MITIGATION**: Graded analysis of regulatory, competitive, and operational risks.\n"
+        f"4. **VALUATION & CAPITAL STRUCTURE AUDIT**: Deep dive into long-term investments, Level 3 asset valuations, and tax considerations (e.g., PFIC status).\n"
+        f"5. **CITATIONS / REFERENCES**: List all footnote citations sequentially.\n\n"
+        f"CITATION REQUIREMENTS:\n"
+        f"- For every financial figure, percentage, rate, date, or specific claim, you MUST append a sequential superscript footnote indicator (e.g., <sup>1</sup>, <sup>2</sup>).\n"
+        f"- Format every citation in the 'Citations / References' section exactly as: [Footnote Number] New Oriental Education & Technology Group Inc., Annual Report (Form 20-F) for the Fiscal Year Ended May 31, 2025, at Page [Number].\n\n"
         f"[RETRIEVED DATA FROM SEC 10-K FILING]:\n{retrieved_context}"
     )
 
@@ -417,12 +422,12 @@ async def query_rag(
     # Audit & Final Polish by DeepSeek (deepseek-chat) with Gemini fallback
     audit_prompt = (
         f"You are a Senior Financial Audit Agent. Review the following draft report against the original source context. "
-        f"Ensure that all dates, financial numbers (revenue, net income, etc.) and page references match the source exactly. "
+        f"Ensure that all dates, financial numbers, margins, and page references match the source exactly. "
         f"Correct any misstatements or formatting gaps.\n\n"
         f"IMPORTANT CITATION AUDIT:\n"
-        f"1. Make sure every mentioned number or metric has a superscript footnote indicator (e.g. <sup>1</sup>, <sup>2</sup>).\n"
-        f"2. Ensure the 'Citations / References' section at the end is present and formatted exactly as:\n"
-        f"   [Footnote Number] New Oriental Education & Technology Group Inc., Annual Report (Form 20-F) for the Fiscal Year Ended May 31, 2025, at [Page Number].\n\n"
+        f"1. Make sure every single number, percentage, and date has a superscript footnote indicator (e.g., <sup>1</sup>, <sup>2</sup>).\n"
+        f"2. Ensure the 'Citations / References' section at the end is present, sequential, and formatted exactly as:\n"
+        f"   [Footnote Number] New Oriental Education & Technology Group Inc., Annual Report (Form 20-F) for the Fiscal Year Ended May 31, 2025, at Page [Number].\n\n"
         f"Output the final polished report in {target_lang}.\n\n"
         f"[SOURCE CONTEXT]:\n{retrieved_context}\n\n"
         f"[DRAFT REPORT]:\n{draft_result}"
