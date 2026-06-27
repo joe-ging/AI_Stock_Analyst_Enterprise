@@ -12,17 +12,22 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Noto+Sans+TC:wght@400;700&display=swap');
         body { font-family: 'Inter', 'Noto Sans TC', 'PingFang SC', sans-serif; }
-        .prose h3 { color: #1e3a8a; font-weight: bold; margin-top: 1.5em; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.5rem; }
-        .prose h4 { color: #b91c1c; font-weight: bold; margin-top: 1.2em; }
+        .markdown-content { max-width: none !important; color: #374151 !important; }
+        .markdown-content p { color: #374151 !important; font-size: 1rem !important; line-height: 1.625 !important; font-weight: 500 !important; margin-top: 0px !important; margin-bottom: 1rem !important; }
+        .markdown-content h3 { color: #111827 !important; font-size: 1.5rem !important; font-weight: 900 !important; letter-spacing: -0.025em !important; margin-top: 2rem !important; margin-bottom: 1.5rem !important; }
+        .markdown-content h4 { color: #111827 !important; font-size: 1.125rem !important; font-weight: 700 !important; margin-top: 1.5rem !important; margin-bottom: 0.75rem !important; }
+        .markdown-content ul { list-style-type: disc !important; margin-left: 1.5rem !important; margin-bottom: 1rem !important; }
+        .markdown-content li { color: #4b5563 !important; font-size: 1rem !important; font-weight: 500 !important; margin-bottom: 0.5rem !important; }
+        .markdown-content strong { font-weight: 700 !important; color: #111827 !important; }
         .loader { border: 3px solid #f3f3f3; border-radius: 50%; border-top: 3px solid #dc2626; width: 20px; height: 20px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .edu-tag { font-size: 8px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; text-transform: uppercase; letter-spacing: 0.02em; }
         /* 📊 Premium Financial Table Styles */
-        .prose table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; font-size: 0.95rem; border: 1px solid #e2e8f0; border-radius: 6px; }
-        .prose th { background-color: #1e3a8a; color: #ffffff; font-weight: 700; padding: 10px 16px; border: 1px solid #e2e8f0; text-align: left; }
-        .prose td { padding: 10px 16px; border: 1px solid #e2e8f0; color: #334155; }
-        .prose tr:nth-child(even) { background-color: #f8fafc; }
-        .prose tr:hover { background-color: #f1f5f9; transition: background-color 0.15s ease; }
+        .markdown-content table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; font-size: 0.95rem; border: 1px solid #e2e8f0; border-radius: 6px; }
+        .markdown-content th { background-color: #1e3a8a; color: #ffffff; font-weight: 700; padding: 10px 16px; border: 1px solid #e2e8f0; text-align: left; }
+        .markdown-content td { padding: 10px 16px; border: 1px solid #e2e8f0; color: #334155; }
+        .markdown-content tr:nth-child(even) { background-color: #f8fafc; }
+        .markdown-content tr:hover { background-color: #f1f5f9; transition: background-color 0.15s ease; }
     </style>
 </head>
 <body class="bg-gray-50 text-gray-900">
@@ -52,15 +57,15 @@
                 citeTitle: "📚 RAG 向量數據源歸因",
                 sourceText: "數據源分塊",
                 originalDoc: "📄 原報告為 182 頁的 PDF",
-                edgarMode: "🌐 SEC EDGAR 導入",
-                pdfMode: "📄 本地 PDF 上傳",
-                ticker: "股票代碼",
-                compareYears: "選擇對比年份",
-                ragasScore: "📊 檢索召回質量 (Ragas)"
+                ragasScore: "📊 RAG 檢索生成質量客觀審計 (Ragas Score)",
+                pdfMode: "物理 PDF 研報",
+                edgarMode: "SEC EDGAR 系統",
+                ticker: "美股代碼 (Ticker)",
+                compareYears: "對比財報年份"
             },
             zh_cn: {
                 title: "JL Intelligence | 精灵人工智能",
-                subtitle: "针对华夏基金定制的 AI 投研原型",
+                subtitle: "针对华夏基金定制 of AI 投研原型",
                 upload: "上传研究文档",
                 uploadHint: "点击上传 PDF 财务报表",
                 uploadDetail: "支持跨页深度扫描与数据提取",
@@ -77,12 +82,12 @@
                 disclaimer: "本页面由 JL Intelligence (Jingling Education) 开发，仅用于技术演示与投研流程原型展示。",
                 citeTitle: "📚 RAG 向量数据源归因",
                 sourceText: "数据源分块",
-                originalDoc: "📄 原报告为 182 页的 PDF",
-                edgarMode: "🌐 SEC EDGAR 导入",
-                pdfMode: "📄 本地 PDF 上传",
-                ticker: "股票代码",
-                compareYears: "选择对比年份",
-                ragasScore: "📊 检索召回质量 (Ragas)"
+                originalDoc: "📄 原报告为 182 页 of PDF",
+                ragasScore: "📊 RAG 检索生成质量客观审计 (Ragas Score)",
+                pdfMode: "物理 PDF 研报",
+                edgarMode: "SEC EDGAR 系统",
+                ticker: "美股代码 (Ticker)",
+                compareYears: "对比财报年份"
             },
             en: {
                 title: "JL Intelligence",
@@ -104,11 +109,11 @@
                 citeTitle: "📚 RAG Vector Citations",
                 sourceText: "Source Chunk",
                 originalDoc: "📄 Original Report: 182-page PDF",
-                edgarMode: "🌐 SEC EDGAR Direct",
-                pdfMode: "📄 Local PDF File",
-                ticker: "Ticker Symbol",
-                compareYears: "Select Compare Years",
-                ragasScore: "📊 RAG Retrieval Quality (Ragas)"
+                ragasScore: "📊 RAG Retrieval Quality Audit (Ragas Score)",
+                pdfMode: "PDF Document",
+                edgarMode: "SEC EDGAR System",
+                ticker: "Stock Ticker",
+                compareYears: "Filing Years"
             }
         };
 
@@ -146,25 +151,12 @@
             const [dbStatus, setDbStatus] = useState("checking");
             const [cacheHit, setCacheHit] = useState(null);
             const [inferenceTime, setInferenceTime] = useState(null);
-            const [uploadMode, setUploadMode] = useState("pdf"); // 'pdf' or 'edgar'
+            const [uploadMode, setUploadMode] = useState("pdf");
             const [ticker, setTicker] = useState("EDU");
             const [selectedYears, setSelectedYears] = useState(["2025", "2024"]);
             const [ragasScores, setRagasScores] = useState(null);
  
             const t = LANG_DICT[lang];
-
-            const ensureClosedMarkdownTables = (md) => {
-                if (!md) return "";
-                const lines = md.split("\n");
-                if (lines.length > 0) {
-                    const lastLine = lines[lines.length - 1].trim();
-                    // If the streaming content ends mid-table row, append clean breaks
-                    if (lastLine.startsWith("|")) {
-                        return md + "\n\n\n";
-                    }
-                }
-                return md;
-            };
  
             React.useEffect(() => {
                 const checkHealth = async () => {
@@ -187,10 +179,19 @@
 
             const handleFileUpload = (e) => setFile(e.target.files[0]);
 
-            const runAnalysis = async () => {
-                if (uploadMode === "pdf" && !file) return;
-                if (uploadMode === "edgar" && (!ticker.trim() || selectedYears.length === 0)) return;
+            const ensureClosedMarkdownTables = (md) => {
+                if (!md) return "";
+                const lines = md.split("\n");
+                if (lines.length > 0) {
+                    const lastLine = lines[lines.length - 1].trim();
+                    if (lastLine.startsWith("|")) {
+                        return md + "\n\n\n";
+                    }
+                }
+                return md;
+            };
 
+            const runAnalysis = async () => {
                 setIsLoading(true);
                 setResult("");
                 setError(null);
@@ -200,15 +201,25 @@
                 setRagasScores(null);
 
                 const formData = new FormData();
-                formData.append('upload_mode', uploadMode);
                 formData.append('analysis_type', analysisType);
                 formData.append('language', lang);
+                formData.append('upload_mode', uploadMode);
 
                 if (uploadMode === "pdf") {
+                    if (!file) {
+                        setError("Please select a PDF file.");
+                        setIsLoading(false);
+                        return;
+                    }
                     formData.append('file', file);
                 } else {
-                    formData.append('ticker', ticker.toUpperCase().trim());
-                    formData.append('years', selectedYears.join(','));
+                    if (!ticker.trim()) {
+                        setError("Please input a stock ticker.");
+                        setIsLoading(false);
+                        return;
+                    }
+                    formData.append('ticker', ticker.toUpperCase());
+                    formData.append('years', JSON.stringify(selectedYears));
                 }
 
                 if (window.isAnalyzingInProgress) {
@@ -224,12 +235,12 @@
                     });
                     
                     if (!response.ok) {
-                        const errorData = await response.json();
-                        throw new Error(errorData.detail || "API Error");
+                        const errorText = await response.text();
+                        throw new Error(errorText || "API Error");
                     }
                     
                     if (!response.body) {
-                        throw new Error("ReadableStream not supported or empty response body.");
+                        throw new Error("ReadableStream not supported.");
                     }
                     const reader = response.body.getReader();
                     const decoder = new TextDecoder("utf-8");
@@ -241,7 +252,6 @@
                         done = readerDone;
                         if (value) {
                             const chunk = decoder.decode(value, { stream: true });
-                            // Split incoming data into lines
                             const lines = chunk.split("\n");
                             for (const line of lines) {
                                 const trimmed = line.trim();
@@ -254,23 +264,17 @@
                                             fullText += parsed.content;
                                             setResult(fullText);
                                         } else if (parsed.type === "stage" && parsed.content === "audit") {
-                                            // Keep fullText as-is during audit phase
-                                            console.log("Entering audit stage...");
+                                            fullText = "";
+                                            setResult("");
                                         } else if (parsed.type === "done") {
-                                            console.log("Gateway received DONE event data:", parsed);
                                             if (parsed.citations) setCitations(parsed.citations);
                                             if (parsed.inference_time_ms) setInferenceTime(parsed.inference_time_ms);
-                                            const bs = parsed.ragas_scores;
-                                            const hasValidScores = bs && (bs.faithfulness > 0 || bs.answer_recall > 0 || bs.relevance > 0);
-                                            const scores = hasValidScores ? bs : { faithfulness: 0.94, answer_recall: 0.91, relevance: 0.95 };
-                                            console.log("Applying Ragas Scores to state:", scores);
-                                            setRagasScores(scores);
+                                            if (parsed.ragas_scores) setRagasScores(parsed.ragas_scores);
                                             setCacheHit(parsed.cache_hit || false);
                                         } else if (parsed.type === "error") {
                                             setError(parsed.content || "Inferencing error encountered");
                                         }
                                     } catch (e) {
-                                        // Ignore partial JSON parse errors
                                     }
                                 }
                             }
@@ -278,7 +282,6 @@
                     }
                 } catch (err) {
                     setError(`Error: ${err.message || String(err)}`);
-                    console.error("Fetch Error:", err);
                 } finally {
                     setIsLoading(false);
                     window.isAnalyzingInProgress = false;
@@ -452,7 +455,7 @@
                             </div>
                         </div>
 
-                        {/* Console */}
+                        {/* Console / Right Results Panel */}
                         <div className="lg:col-span-8 bg-white rounded-[2.5rem] shadow-2xl shadow-gray-300/40 border border-gray-100 flex flex-col min-h-[700px] overflow-hidden">
                             <div className="bg-gray-50/80 border-b border-gray-100 px-8 py-5 flex justify-between items-center flex-wrap gap-4">
                                 <div className="flex items-center gap-3">
@@ -464,110 +467,126 @@
                                     <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-4">Inference Console</span>
                                 </div>
                                 
-                        </div>
+                                {inferenceTime !== null && (
+                                    <div className="flex items-center gap-4 text-[10px] font-black">
+                                        <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1.5 rounded-md text-slate-600">
+                                            <span>LATENCY:</span>
+                                            <span className="text-slate-900">{inferenceTime}ms</span>
+                                        </div>
+                                        <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md ${cacheHit ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
+                                            <span>CACHE:</span>
+                                            <span>{cacheHit ? 'HIT' : 'MISS'}</span>
+                                        </div>
+                                    </div>
+                                )}
+                                
+                                <span className="text-[10px] font-bold text-gray-400 italic uppercase">{t.version}</span>
+                            </div>
 
-                        {/* Right Results Panel */}
-                        <div className="flex-1 bg-white border border-gray-100 rounded-3xl p-10 shadow-sm flex flex-col relative overflow-hidden min-h-[500px]">
-                            {/* Running Loader Cover */}
-                            {isLoading && result === "" && (
-                                <div className="absolute inset-0 bg-white/90 backdrop-blur-sm flex flex-col items-center justify-center gap-4 z-10 animate-in fade-in duration-300">
-                                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-100 animate-bounce">
-                                        <span className="text-white text-xs font-black">AI</span>
+                            <div className="flex-1 p-12 overflow-y-auto">
+                                {result === "" && !isLoading && !error && (
+                                    <div className="h-full flex flex-col items-center justify-center text-gray-200">
+                                        <Icons.File />
+                                        <p className="mt-6 text-base font-bold text-gray-300 tracking-tight text-center uppercase">
+                                            {t.waiting}<br/>
+                                            <span className="text-[11px] font-medium text-gray-400 normal-case italic">{t.waitHint}</span>
+                                        </p>
                                     </div>
-                                    <div className="text-center">
-                                        <p className="text-xs font-black text-slate-800">Processing Document Ingestion...</p>
-                                        <p className="text-[10px] text-gray-400 font-medium mt-1">This typically takes 20-30 seconds depending on file complexity.</p>
-                                    </div>
-                                </div>
-                            )}
+                                )}
 
-                            {/* Empty State cover */}
-                            {result === "" && !isLoading && (
-                                <div className="flex-1 flex flex-col items-center justify-center text-center gap-4 py-20">
-                                    <div className="w-16 h-16 rounded-3xl bg-slate-50 flex items-center justify-center border border-slate-100">
-                                        <span className="text-2xl">📊</span>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs font-black text-slate-700">{t.noResultsTitle}</p>
-                                        <p className="text-[10px] text-gray-400 font-medium mt-1">{t.noResultsDesc}</p>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Active Content Scroll Container */}
-                            <div className="flex-1 overflow-y-auto max-h-[750px] pr-2">
                                 {error && (
-                                    <div className="mb-6 bg-rose-50 border border-rose-100 text-rose-800 px-6 py-4 rounded-2xl text-xs font-bold shadow-sm">
+                                    <div className="bg-red-50 text-red-800 p-6 rounded-3xl border border-red-100 text-sm shadow-inner">
                                         <div className="font-black mb-1 tracking-tight uppercase">Connection Alert</div>
                                         <p className="font-medium opacity-80">{error}</p>
                                     </div>
                                 )}
 
                                 {result !== "" && (
-                                    <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-1000">
-                                        <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: marked.parse(ensureClosedMarkdownTables(result)) }} />
+                                    <div className="mb-8 inline-flex items-center gap-2 bg-indigo-50 border border-indigo-100 text-indigo-700 px-4 py-2 rounded-full text-xs font-bold shadow-sm animate-in fade-in slide-in-from-bottom-2">
+                                        {t.originalDoc}
+                                    </div>
+                                )}
 
-                                        {/* 3. Ragas Scoring Dashboard Cards */}
-                                        <div className="mt-6 border-t border-gray-100 pt-8">
-                                            <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">{t.ragasScore}</div>
-                                            <div className="grid grid-cols-3 gap-4">
-                                                {[
-                                                    {
-                                                        key: "faithfulness", 
-                                                        label: "Faithfulness (忠实度)", 
-                                                        desc: "正文的所有数据和结论是否100%忠实于原文，有无捏造或模型幻觉。",
-                                                        style: { bg: "bg-indigo-50/50", border: "border-indigo-100/50", text: "text-indigo-600", valText: "text-indigo-800", bar: "bg-indigo-500" }
-                                                    },
-                                                    {
-                                                        key: "answer_recall", 
-                                                        label: "Answer Recall (召回率)", 
-                                                        desc: "报告是否完整覆盖了原文中分析该问题所需的所有关键财务与业务指标。",
-                                                        style: { bg: "bg-emerald-50/50", border: "border-emerald-100/50", text: "text-emerald-600", valText: "text-emerald-800", bar: "bg-emerald-500" }
-                                                    },
-                                                    {
-                                                        key: "relevance", 
-                                                        label: "Relevance (相关度)", 
-                                                        desc: "生成的报告内容与股票分析及投资决策的相关程度。",
-                                                        style: { bg: "bg-violet-50/50", border: "border-violet-100/50", text: "text-violet-600", valText: "text-violet-800", bar: "bg-violet-500" }
-                                                    }
-                                                ].map(({key, label, desc, style}) => {
-                                                    const val = ragasScores ? (ragasScores[key] ?? 0) : null;
-                                                    const pct = val !== null ? Math.round(val * 100) : null;
-                                                    return (
-                                                        <div key={key} className={`${style.bg} border ${style.border} rounded-2xl p-5 relative overflow-hidden flex flex-col justify-between min-h-[160px]`}>
-                                                            {pct === null && (
-                                                                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent animate-pulse" />
-                                                            )}
-                                                            <div>
-                                                                <div className="flex justify-between items-baseline mb-2">
-                                                                    <span className={`text-xs font-black tracking-tight ${style.text}`}>{label}</span>
-                                                                    <span className={`text-3xl font-black ${style.valText}`}>
-                                                                        {pct !== null ? `${pct}%` : <span className="text-xs font-bold text-gray-400 animate-pulse">Auditing...</span>}
-                                                                    </span>
-                                                                </div>
-                                                                <p className="text-[10px] text-slate-500 leading-normal font-medium mb-4">{desc}</p>
+                                {result !== "" && (
+                                    <div className="markdown-content max-w-none animate-in fade-in slide-in-from-bottom-4 duration-1000" dangerouslySetInnerHTML={{ __html: marked.parse(ensureClosedMarkdownTables(result)) }}></div>
+                                )}
+
+                                {result !== "" && (
+                                    <div className="mt-10 pt-8 border-t border-gray-100">
+                                        <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-6">{t.ragasScore}</div>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                            {[
+                                                {
+                                                    key: "faithfulness", 
+                                                    label: "Faithfulness (忠实度)", 
+                                                    desc: "检查生成的报告结论是否完全基于原文提供的事实与数据，防止捏造事实与幻觉。",
+                                                    bg: "bg-indigo-50/50",
+                                                    border: "border-indigo-100/50",
+                                                    text: "text-indigo-600",
+                                                    valText: "text-indigo-900",
+                                                    bar: "bg-indigo-600"
+                                                },
+                                                {
+                                                    key: "answer_recall", 
+                                                    label: "Answer Recall (召回率)", 
+                                                    desc: "评估报告是否涵盖了原文分析该上市公司所必需的全部核心财务指标与关键业务逻辑。",
+                                                    bg: "bg-emerald-50/50",
+                                                    border: "border-emerald-100/50",
+                                                    text: "text-emerald-600",
+                                                    valText: "text-emerald-900",
+                                                    bar: "bg-emerald-600"
+                                                },
+                                                {
+                                                    key: "relevance", 
+                                                    label: "Relevance (相关度)", 
+                                                    desc: "评估生成内容与股票分析及投资价值研究的直接关联程度，杜绝冗余闲聊。",
+                                                    bg: "bg-violet-50/50",
+                                                    border: "border-violet-100/50",
+                                                    text: "text-violet-600",
+                                                    valText: "text-violet-900",
+                                                    bar: "bg-violet-600"
+                                                }
+                                            ].map(({key, label, desc, bg, border, text, valText, bar}) => {
+                                                const val = ragasScores ? (ragasScores[key] ?? 0) : null;
+                                                const pct = val !== null ? Math.round(val * 100) : null;
+                                                return (
+                                                    <div key={key} className={`${bg} border ${border} rounded-2xl p-6 relative overflow-hidden flex flex-col justify-between min-h-[180px] shadow-sm hover:shadow-md transition-shadow duration-300`}>
+                                                        {pct === null && (
+                                                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/55 to-transparent animate-pulse"></div>
+                                                        )}
+                                                        <div>
+                                                            <div className="flex justify-between items-baseline mb-3">
+                                                                <span className={`text-xs font-black uppercase tracking-wider ${text}`}>{label}</span>
+                                                                <span className={`text-4xl font-extrabold ${valText}`}>
+                                                                    {pct !== null ? `${pct}%` : <span className="text-xs font-bold text-gray-400 animate-pulse">Auditing...</span>}
+                                                                </span>
                                                             </div>
-                                                            <div className="h-2 bg-white rounded-full overflow-hidden shadow-inner w-full">
+                                                            <div className="h-2 bg-white rounded-full overflow-hidden shadow-inner w-full mb-4">
                                                                 <div 
-                                                                    className={`h-full ${style.bar} rounded-full transition-all duration-1000`}
+                                                                    className={`h-full ${bar} rounded-full transition-all duration-1000`}
                                                                     style={{width: `${pct !== null ? pct : 0}%`}}
                                                                 />
                                                             </div>
+                                                            <p className="text-[10px] text-gray-500 leading-normal font-semibold mt-2">{desc}</p>
                                                         </div>
-                                                    );
-                                                })}
-                                            </div>
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
+                                    </div>
+                                )}
 
-                                        {/* 4. Inference Terminated Layout Footer */}
-                                        <div className="mt-8 pt-8 border-t border-gray-100 flex justify-between items-center text-[10px] font-bold text-gray-400 uppercase tracking-tight">
-                                            <span>Inference Terminated</span>
-                                            <span>Generated by JL Agent on Gemini 2.5 Flash</span>
-                                        </div>
+                                {result !== "" && (
+                                    <div className="mt-16 pt-8 border-t border-gray-100 flex justify-between items-center text-[10px] font-bold text-gray-400 uppercase tracking-tight">
+                                        <span>Inference Terminated</span>
+                                        <span>Generated by JL Agent on Gemini 2.5 Flash</span>
                                     </div>
                                 )}
                             </div>
                         </div>
+                    </main>
+
+                    <footer className="bg-white border-t border-gray-100 py-8 px-12 flex flex-col md:flex-row justify-between items-center gap-4 text-center">
                         <div className="text-[10px] text-gray-400 font-medium">
                             © 2026 {CONFIG.userName}. Powered by <span className="font-black text-gray-600">{CONFIG.brandName}</span>
                         </div>
