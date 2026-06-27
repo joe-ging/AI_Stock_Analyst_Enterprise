@@ -31,6 +31,24 @@ DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@db:5432/postgres")
 REDIS_URL = os.environ.get("REDIS_URL", "redis://cache:6379/0")
 
+# --- OpenAINext Configs & Proxy Wiping ---
+OPENAINEXT_API_KEY = os.environ.get("OPENAINEXT_API_KEY") or "sk-mAn6YxK3EWFQJtQ6D095E5CbB4B241D2B960563dA26c4308"
+EMBEDDING_PROVIDER = os.environ.get("EMBEDDING_PROVIDER", "gemini").lower()
+
+if EMBEDDING_PROVIDER == "openainext":
+    # Wipe proxy variables completely to force clean direct connect
+    for var in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"]:
+        if var in os.environ:
+            del os.environ[var]
+    VECTOR_DIMENSION = 1536
+    COLLECTION_PREFIX = "openainext"
+else:
+    VECTOR_DIMENSION = 768
+    COLLECTION_PREFIX = "gemini"
+
+CACHE_COLLECTION_NAME = f"{COLLECTION_PREFIX}_stock_analysis_cache"
+DOC_CHUNKS_COLLECTION_NAME = f"{COLLECTION_PREFIX}_document_chunks"
+
 # Milvus Connection Configs
 MILVUS_HOST = os.environ.get("MILVUS_HOST", "milvus")
 MILVUS_PORT = os.environ.get("MILVUS_PORT", "19530")
@@ -267,6 +285,48 @@ def stream_deepseek_sync(prompt: str, model: str = "deepseek-chat"):
                 except Exception:
                     continue
 
+async def get_embedding(text: str) -> list:
+    """Unified embedding getter supporting Gemini (with proxy) and OpenAINext (direct link)"""
+    import requests
+    if EMBEDDING_PROVIDER == "openainext":
+        url = "https://api.openai-next.com/v1/embeddings"
+        headers = {
+            "Authorization": f"Bearer {OPENAINEXT_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "input": text,
+            "model": "text-embedding-3-small"
+        }
+        def _call_openainext():
+            res = requests.post(url, json=payload, headers=headers, timeout=15.0)
+            res.raise_for_status()
+            return res.json()["data"][0]["embedding"]
+        try:
+            return await asyncio.to_thread(_call_openainext)
+        except Exception as e:
+            logger.error(f"OpenAINext Embedding failed: {e}")
+            return None
+    else:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent?key={API_KEY}"
+        payload = {
+            "content": {
+                "parts": [{"text": text}]
+            },
+            "outputDimensionality": 768
+        }
+        proxy_url = os.environ.get("HTTP_PROXY") or os.environ.get("ALL_PROXY")
+        proxies_map = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+        def _call_gemini():
+            res = requests.post(url, json=payload, proxies=proxies_map, timeout=30.0)
+            res.raise_for_status()
+            return res.json()["embedding"]["values"]
+        try:
+            return await asyncio.to_thread(_call_gemini)
+        except Exception as e:
+            logger.error(f"Gemini Embedding failed: {e}")
+            return None
+
 async def stream_deepseek(prompt: str, model: str = "deepseek-chat") -> AsyncGenerator[str, None]:
     """Streaming DeepSeek call via thread-safe queue and requests (supporting socks5h)"""
     if not DEEPSEEK_API_KEY:
@@ -372,14 +432,14 @@ def get_milvus_connection():
 def init_cache_collection():
     """Initializes the collection used for the semantic cache"""
     get_milvus_connection()
-    collection_name = "semantic_cache_index"
+    collection_name = CACHE_COLLECTION_NAME
     
     if not utility.has_collection(collection_name):
         fields = [
             FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
             FieldSchema(name="query_text", dtype=DataType.VARCHAR, max_length=1024),
             FieldSchema(name="cache_key", dtype=DataType.VARCHAR, max_length=256),
-            FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=768)
+            FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=VECTOR_DIMENSION)
         ]
         schema = CollectionSchema(fields, "Semantic query cache mappings")
         collection = Collection(collection_name, schema)
@@ -440,8 +500,8 @@ async def ingest_document(file: UploadFile = File(...)):
             doc_id = row[0]
             # Verify Milvus has vectors for this document
             get_milvus_connection()
-            if utility.has_collection("stock_analysis_chunks"):
-                collection = Collection("stock_analysis_chunks")
+            if utility.has_collection(DOC_CHUNKS_COLLECTION_NAME):
+                collection = Collection(DOC_CHUNKS_COLLECTION_NAME)
                 collection.load()
                 cnt_res = collection.query(expr=f"document_id == {doc_id}", output_fields=["id"])
                 if len(cnt_res) > 0:
@@ -605,36 +665,14 @@ async def query_rag(
     # Node 2: Retriever Node (Milvus Parent-Child Search with Query Decomposition)
     logger.info("LangGraph [Retriever Node] executing parent-child similarity search...")
     get_milvus_connection()
-    collection = Collection("stock_analysis_chunks")
+    collection = Collection(DOC_CHUNKS_COLLECTION_NAME)
     
     # Generic sub-queries that work for any SEC filing
     sub_queries = [target_query] + GENERIC_SUB_QUERIES
     
     # Parallel sub-query embedding via asyncio
     async def embed_single(sq):
-        # Parallel sub-query embedding via standard REST API over requests (supporting socks5h)
-        import requests
-        proxy_url = os.environ.get("HTTP_PROXY") or os.environ.get("ALL_PROXY")
-        proxies_map = {"http": proxy_url, "https": proxy_url} if proxy_url else None
-        
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent?key={API_KEY}"
-        payload = {
-            "content": {
-                "parts": [{"text": sq}]
-            },
-            "outputDimensionality": 768
-        }
-        
-        def _sync_embed():
-            res = requests.post(url, json=payload, proxies=proxies_map, timeout=30.0)
-            res.raise_for_status()
-            return res.json()["embedding"]["values"]
-            
-        try:
-            return await asyncio.to_thread(_sync_embed)
-        except Exception as e:
-            logger.error(f"Embedding subquery failed: {e}")
-            return None
+        return await get_embedding(sq)
     
     embedding_results = await asyncio.gather(*[embed_single(sq) for sq in sub_queries])
     query_vectors = [v for v in embedding_results if v is not None]
@@ -784,23 +822,9 @@ async def _build_rag_context(filename: str, analysis_type: str, language: str):
         raise HTTPException(status_code=400, detail=f"Invalid analysis_type: {analysis_type}")
     target_query = template["query"]
     logger.info(f"[DEBUG] _build_rag_context: Query template found, embedding query text: {target_query[:60]}...")
-    # Embed query via standard REST API over requests (supporting socks5h)
-    import requests
-    proxy_url = os.environ.get("HTTP_PROXY") or os.environ.get("ALL_PROXY")
-    proxies_map = {"http": proxy_url, "https": proxy_url} if proxy_url else None
-    
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent?key={API_KEY}"
-    payload = {
-        "content": {
-            "parts": [{"text": target_query}]
-        },
-        "outputDimensionality": 768
-    }
-    
-    logger.info("[DEBUG] Requesting Gemini Embedding via standard REST API (requests)...")
-    res = requests.post(url, json=payload, proxies=proxies_map, timeout=30.0)
-    res.raise_for_status()
-    query_vector = res.json()["embedding"]["values"]
+    query_vector = await get_embedding(target_query)
+    if not query_vector:
+        raise HTTPException(status_code=500, detail="Failed to generate embedding for query")
         
     logger.info("[DEBUG] _build_rag_context: Embedding successful. Querying Milvus semantic cache...")
     
@@ -836,18 +860,11 @@ async def _build_rag_context(filename: str, analysis_type: str, language: str):
     
     # Parallel retrieval using generic sub-queries
     get_milvus_connection()
-    collection = Collection("stock_analysis_chunks")
+    collection = Collection(DOC_CHUNKS_COLLECTION_NAME)
     sub_queries = [target_query] + GENERIC_SUB_QUERIES
     
     async def embed_single(sq):
-        try:
-            emb_res = await asyncio.to_thread(
-                client.models.embed_content, model="gemini-embedding-2",
-                contents=sq, config=types.EmbedContentConfig(output_dimensionality=768)
-            )
-            return emb_res.embeddings[0].values
-        except Exception:
-            return None
+        return await get_embedding(sq)
     
     embedding_results = await asyncio.gather(*[embed_single(sq) for sq in sub_queries])
     q_vectors = [v for v in embedding_results if v is not None] or [query_vector]

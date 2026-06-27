@@ -22,6 +22,24 @@ CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://cache:6
 
 celery_app = Celery("tasks", broker=CELERY_BROKER_URL, backend=CELERY_RESULT_BACKEND)
 
+# --- OpenAINext Configs & Proxy Wiping ---
+OPENAINEXT_API_KEY = os.environ.get("OPENAINEXT_API_KEY") or "sk-mAn6YxK3EWFQJtQ6D095E5CbB4B241D2B960563dA26c4308"
+EMBEDDING_PROVIDER = os.environ.get("EMBEDDING_PROVIDER", "gemini").lower()
+
+if EMBEDDING_PROVIDER == "openainext":
+    # Wipe proxy variables completely to force clean direct connect
+    for var in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"]:
+        if var in os.environ:
+            del os.environ[var]
+    VECTOR_DIMENSION = 1536
+    COLLECTION_PREFIX = "openainext"
+else:
+    VECTOR_DIMENSION = 768
+    COLLECTION_PREFIX = "gemini"
+
+CACHE_COLLECTION_NAME = f"{COLLECTION_PREFIX}_stock_analysis_cache"
+DOC_CHUNKS_COLLECTION_NAME = f"{COLLECTION_PREFIX}_document_chunks"
+
 MILVUS_HOST = os.environ.get("MILVUS_HOST", "milvus")
 MILVUS_PORT = os.environ.get("MILVUS_PORT", "19530")
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@db:5432/postgres")
@@ -44,13 +62,11 @@ def get_milvus_connection():
 
 def init_milvus_collection():
     get_milvus_connection()
-    collection_name = "stock_analysis_chunks"
+    collection_name = DOC_CHUNKS_COLLECTION_NAME
     
     # Drop old collection if table schema changed
     if utility.has_collection(collection_name):
-        # We drop the collection to recreate it with the parent-child fields
         col = Collection(collection_name)
-        # Check if schema contains parent_text, if not, drop it
         has_parent = False
         for f in col.schema.fields:
             if f.name == "parent_text":
@@ -66,7 +82,7 @@ def init_milvus_collection():
             FieldSchema(name="page_number", dtype=DataType.INT64),
             FieldSchema(name="parent_text", dtype=DataType.VARCHAR, max_length=65535),
             FieldSchema(name="child_text", dtype=DataType.VARCHAR, max_length=65535),
-            FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=768)
+            FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=VECTOR_DIMENSION)
         ]
         schema = CollectionSchema(fields, "10-K Chunk Vector Embeddings with Parent-Child Structures")
         collection = Collection(collection_name, schema)
@@ -180,25 +196,40 @@ def ingest_pdf_task(filename: str, doc_id: int):
     logger.info(f"Generated {len(chunks_with_metadata)} parent-child chunks from {filename}")
 
     # 3. Generate Embeddings batch-by-batch
-    client = genai.Client(api_key=API_KEY)
     batch_size = 15
     embeddings_list = []
-    
     texts = [item["child_text"] for item in chunks_with_metadata]
     
+    import requests
     try:
         for i in range(0, len(texts), batch_size):
             batch_texts = texts[i:i+batch_size]
-            # Embed child chunks for indexing with exponential backoff retries
             max_retries = 5
-            response = None
+            batch_vectors = None
+            
             for attempt in range(max_retries):
                 try:
-                    response = client.models.embed_content(
-                        model="gemini-embedding-2",
-                        contents=[types.Content(parts=[types.Part.from_text(text=t)]) for t in batch_texts],
-                        config=types.EmbedContentConfig(output_dimensionality=768)
-                    )
+                    if EMBEDDING_PROVIDER == "openainext":
+                        url = "https://api.openai-next.com/v1/embeddings"
+                        headers = {
+                            "Authorization": f"Bearer {OPENAINEXT_API_KEY}",
+                            "Content-Type": "application/json"
+                        }
+                        payload = {
+                            "input": batch_texts,
+                            "model": "text-embedding-3-small"
+                        }
+                        res = requests.post(url, json=payload, headers=headers, timeout=30.0)
+                        res.raise_for_status()
+                        batch_vectors = [item["embedding"] for item in res.json()["data"]]
+                    else:
+                        client = genai.Client(api_key=API_KEY)
+                        response = client.models.embed_content(
+                            model="gemini-embedding-2",
+                            contents=[types.Content(parts=[types.Part.from_text(text=t)]) for t in batch_texts],
+                            config=types.EmbedContentConfig(output_dimensionality=768)
+                        )
+                        batch_vectors = [embedding_obj.values for embedding_obj in response.embeddings]
                     break
                 except Exception as api_err:
                     if attempt == max_retries - 1:
@@ -207,12 +238,11 @@ def ingest_pdf_task(filename: str, doc_id: int):
                     logger.warning(f"Embedding API transient error: {api_err}. Retrying in {wait_time}s... (Attempt {attempt+1}/{max_retries})")
                     time.sleep(wait_time)
             
-            for embedding_obj in response.embeddings:
-                embeddings_list.append(embedding_obj.values)
-            
+            if batch_vectors:
+                embeddings_list.extend(batch_vectors)
             time.sleep(0.15)
     except Exception as e:
-        logger.error(f"Gemini embedding batch generation failed: {e}")
+        logger.error(f"Embedding batch generation failed: {e}")
         return {"status": "failed", "error": f"Embedding API error: {str(e)}"}
 
     # 4. Insert into Milvus
