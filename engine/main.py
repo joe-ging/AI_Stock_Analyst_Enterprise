@@ -1051,34 +1051,16 @@ async def query_rag_stream(
             if json_match:
                 parsed_scores = json.loads(json_match.group())
                 
-                # Check for zero/invalid scores and apply smart heuristics if necessary
-                f_val = float(parsed_scores.get("faithfulness", 0))
-                a_val = float(parsed_scores.get("answer_recall", 0))
-                r_val = float(parsed_scores.get("relevance", 0))
-                
-                if f_val < 0.5 or a_val < 0.5 or r_val < 0.5:
-                    logger.info("[Stream] Model returned zero or low scores, computing realistic performance values...")
-                    # Compute smart fallback scores based on report length and table/footnote presence
-                    has_tables = "|" in final_report_text
-                    footnotes_count = final_report_text.count("<sup>")
-                    f_val = 0.93 + (0.01 * min(footnotes_count // 3, 5))
-                    a_val = 0.89 + (0.01 * (5 if has_tables else 0))
-                    r_val = 0.94 + (0.005 * min(len(final_report_text) // 500, 8))
-                    
                 ragas_scores = {
-                    "faithfulness": round(min(f_val, 1.0), 2),
-                    "answer_recall": round(min(a_val, 1.0), 2),
-                    "relevance": round(min(r_val, 1.0), 2)
+                    "faithfulness": round(float(parsed_scores.get("faithfulness", 0.0)), 2),
+                    "answer_recall": round(float(parsed_scores.get("answer_recall", 0.0)), 2),
+                    "relevance": round(float(parsed_scores.get("relevance", 0.0)), 2)
                 }
                 logger.info(f"[Stream] Final computed Ragas scores: {ragas_scores}")
             else:
                 logger.warning(f"[Stream] Could not parse Ragas JSON from: {score_text}")
         except Exception as e:
             logger.warning(f"[Stream] Ragas scoring failed (non-critical): {e}")
-            
-        # Guarantee non-null final Ragas scores
-        if not ragas_scores:
-            ragas_scores = {"faithfulness": 0.94, "answer_recall": 0.91, "relevance": 0.95}
         
         # Cache the final compiled result
         output_data = {
