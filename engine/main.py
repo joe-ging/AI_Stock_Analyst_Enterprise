@@ -221,16 +221,18 @@ async def call_deepseek_async(prompt: str, model: str = "deepseek-chat") -> str:
         "temperature": 0.2
     }
     
-    async with httpx.AsyncClient(timeout=120.0) as cl:
-        response = await cl.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"]
-
-async def stream_deepseek(prompt: str, model: str = "deepseek-chat") -> AsyncGenerator[str, None]:
-    """Streaming DeepSeek call — yields text chunks as they arrive"""
-    if not DEEPSEEK_API_KEY:
-        raise ValueError("DEEPSEEK_API_KEY is not configured")
+    import requests
+    proxy_url = os.environ.get("HTTP_PROXY") or os.environ.get("ALL_PROXY")
+    proxies_map = {"http": proxy_url, "https": proxy_url} if proxy_url else None
     
+    res = requests.post(url, headers=headers, json=payload, proxies=proxies_map, timeout=120.0)
+    res.raise_for_status()
+    return res.json()["choices"][0]["message"]["content"]
+
+import queue
+import threading
+
+def stream_deepseek_sync(prompt: str, model: str = "deepseek-chat"):
     url = "https://api.deepseek.com/chat/completions"
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
@@ -242,23 +244,52 @@ async def stream_deepseek(prompt: str, model: str = "deepseek-chat") -> AsyncGen
         "temperature": 0.2,
         "stream": True
     }
+    proxy_url = os.environ.get("HTTP_PROXY") or os.environ.get("ALL_PROXY")
+    proxies_map = {"http": proxy_url, "https": proxy_url} if proxy_url else None
     
-    async with httpx.AsyncClient(timeout=120.0) as cl:
-        async with cl.stream("POST", url, headers=headers, json=payload) as response:
-            response.raise_for_status()
-            async for line in response.aiter_lines():
-                if line.startswith("data: "):
-                    data_str = line[6:]
-                    if data_str.strip() == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(data_str)
-                        delta = chunk.get("choices", [{}])[0].get("delta", {})
-                        content = delta.get("content", "")
-                        if content:
-                            yield content
-                    except json.JSONDecodeError:
-                        continue
+    import requests
+    res = requests.post(url, json=payload, headers=headers, proxies=proxies_map, stream=True, timeout=120.0)
+    res.raise_for_status()
+    
+    for line in res.iter_lines():
+        if line:
+            decoded_line = line.decode("utf-8")
+            if decoded_line.startswith("data: "):
+                data_str = decoded_line[6:]
+                if data_str.strip() == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data_str)
+                    delta = chunk.get("choices", [{}])[0].get("delta", {})
+                    content = delta.get("content", "")
+                    if content:
+                        yield content
+                except Exception:
+                    continue
+
+async def stream_deepseek(prompt: str, model: str = "deepseek-chat") -> AsyncGenerator[str, None]:
+    """Streaming DeepSeek call via thread-safe queue and requests (supporting socks5h)"""
+    if not DEEPSEEK_API_KEY:
+        raise ValueError("DEEPSEEK_API_KEY is not configured")
+        
+    q = queue.Queue()
+    
+    def _producer():
+        try:
+            for token in stream_deepseek_sync(prompt, model):
+                q.put(token)
+        except Exception as e:
+            logger.error(f"DeepSeek stream producer thread failed: {e}")
+        finally:
+            q.put(None)
+            
+    threading.Thread(target=_producer, daemon=True).start()
+    
+    while True:
+        chunk = await asyncio.to_thread(q.get)
+        if chunk is None:
+            break
+        yield chunk
 
 # --- Infrastructure Connections (initialized at startup) ---
 redis_client = None
