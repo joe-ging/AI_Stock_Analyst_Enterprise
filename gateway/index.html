@@ -254,8 +254,8 @@
                                             fullText += parsed.content;
                                             setResult(fullText);
                                         } else if (parsed.type === "stage" && parsed.content === "audit") {
-                                            fullText = "";
-                                            setResult("");
+                                            // Keep fullText as-is during audit phase
+                                            console.log("Entering audit stage...");
                                         } else if (parsed.type === "done") {
                                             console.log("Gateway received DONE event data:", parsed);
                                             if (parsed.citations) setCitations(parsed.citations);
