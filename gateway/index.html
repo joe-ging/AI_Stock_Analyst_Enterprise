@@ -164,6 +164,9 @@
                         throw new Error(errorData.detail || "API Error");
                     }
                     
+                    if (!response.body) {
+                        throw new Error("ReadableStream not supported or empty response body.");
+                    }
                     const reader = response.body.getReader();
                     const decoder = new TextDecoder("utf-8");
                     let done = false;
@@ -189,7 +192,7 @@
                                         } else if (parsed.type === "done") {
                                             if (parsed.citations) setCitations(parsed.citations);
                                             if (parsed.inference_time_ms) setInferenceTime(parsed.inference_time_ms);
-                                            setCacheHit(false);
+                                            setCacheHit(parsed.cache_hit || false);
                                         }
                                     } catch (e) {
                                         // Ignore partial JSON parse errors
@@ -199,7 +202,7 @@
                         }
                     }
                 } catch (err) {
-                    setError(lang === 'en' ? "Server processing error... please check logs." : "服務端處理出錯，請檢查服務日誌...");
+                    setError(`Error: ${err.message || String(err)}`);
                     console.error("Fetch Error:", err);
                 } finally {
                     setIsLoading(false);
