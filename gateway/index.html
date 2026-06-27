@@ -90,8 +90,8 @@
             edu: ["UPenn", "Cambridge", "PKU"]
         };
 
-        // --- 🟢 关键配置：改为相对路径以实现容器化自动识别 ---
-        const API_URL = "/analyze"; 
+        // --- 🟢 关键配置：使用流式端点 ---
+        const API_URL = "/analyze/stream"; 
 
         const Icons = {
             Upload: () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>,
@@ -109,7 +109,7 @@
             const [file, setFile] = useState(null);
             const [analysisType, setAnalysisType] = useState('comprehensive');
             const [isLoading, setIsLoading] = useState(false);
-            const [result, setResult] = useState(null);
+            const [result, setResult] = useState("");
             const [citations, setCitations] = useState([]);
             const [error, setError] = useState(null);
             const [dbStatus, setDbStatus] = useState("checking");
@@ -142,10 +142,11 @@
             const runAnalysis = async () => {
                 if (!file) return;
                 setIsLoading(true);
-                setResult(null);
+                setResult("");
                 setError(null);
                 setCacheHit(null);
                 setInferenceTime(null);
+                setCitations([]);
 
                 const formData = new FormData();
                 formData.append('file', file);
@@ -163,11 +164,40 @@
                         throw new Error(errorData.detail || "API Error");
                     }
                     
-                    const data = await response.json();
-                    setResult(data.analysis);
-                    setCitations(data.citations || []);
-                    setCacheHit(data.cache_hit);
-                    setInferenceTime(data.inference_time_ms);
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder("utf-8");
+                    let done = false;
+                    let fullText = "";
+
+                    while (!done) {
+                        const { value, done: readerDone } = await reader.read();
+                        done = readerDone;
+                        if (value) {
+                            const chunk = decoder.decode(value, { stream: true });
+                            // Parse SSE format: data: {"token": "..."}
+                            const lines = chunk.split("\n");
+                            for (const line of lines) {
+                                if (line.startsWith("data: ")) {
+                                    try {
+                                        const parsed = JSON.parse(line.slice(6));
+                                        if (parsed.token) {
+                                            fullText += parsed.token;
+                                            setResult(fullText);
+                                        }
+                                        if (parsed.citations) {
+                                            setCitations(parsed.citations);
+                                        }
+                                        if (parsed.inference_time_ms) {
+                                            setInferenceTime(parsed.inference_time_ms);
+                                            setCacheHit(parsed.cache_hit);
+                                        }
+                                    } catch (e) {
+                                        // Silent catch for partial chunk JSON parse errors
+                                    }
+                                }
+                            }
+                        }
+                    }
                 } catch (err) {
                     setError(lang === 'en' ? "Server processing error... please check logs." : "服務端處理出錯，請檢查服務日誌...");
                     console.error("Fetch Error:", err);
@@ -320,7 +350,7 @@
                             </div>
 
                             <div className="flex-1 p-12 overflow-y-auto">
-                                {!result && !isLoading && !error && (
+                                {result === "" && !isLoading && !error && (
                                     <div className="h-full flex flex-col items-center justify-center text-gray-200">
                                         <Icons.File />
                                         <p className="mt-6 text-base font-bold text-gray-300 tracking-tight text-center uppercase">
@@ -337,7 +367,7 @@
                                     </div>
                                 )}
 
-                                {result && (
+                                {result !== "" && (
                                     <div className="prose max-w-none animate-in fade-in slide-in-from-bottom-4 duration-1000">
                                         {result.split('\n').map((line, i) => {
                                             if (line.startsWith('### ')) return <h3 key={i} className="text-2xl font-black tracking-tight mt-8 mb-6">{line.replace('### ', '')}</h3>;
