@@ -109,14 +109,21 @@ def evaluate_answer_relevance(question: str, answer: str) -> float:
 def main():
     print("=== Starting RAG Ragas Evaluation Suite ===")
     
-    # Test suite queries (typical analyst tasks)
+    # Test suite queries matching the 3 actual analysis types of the system
     test_cases = [
         {
-            "question": "公司长期投资的总额是多少，包含了哪些重点项目？",
+            "question": "请对该公司的核心业务转型表现、主要投资组合风险以及美国 PFIC 税务合规风险进行一份综合投行备忘录分析。",
+            "analysis_type": "comprehensive",
             "filename": "FY2025 Annual Report_20-F.pdf"
         },
         {
-            "question": "公司对于被动外国投资公司 (PFIC) 的分类认定是怎样的？对美国投资者有什么税务惩罚影响？",
+            "question": "请审计该公司的合规披露，并指出任何监管、知识产权诉讼及税务合规方面的红线风险。",
+            "analysis_type": "compliance",
+            "filename": "FY2025 Annual Report_20-F.pdf"
+        },
+        {
+            "question": "请提供一个高频决策级别的 3 分钟高管财务简报，包含最核心的营收指标与突发风险。",
+            "analysis_type": "quick",
             "filename": "FY2025 Annual Report_20-F.pdf"
         }
     ]
@@ -133,18 +140,14 @@ def main():
         test_cases = test_cases[:1] # CI runs only 1 test case for speed
         
     for idx, case in enumerate(test_cases):
-        print(f"Evaluating Case {idx+1}/{len(test_cases)}: '{case['question']}'")
+        print(f"Evaluating Case {idx+1}/{len(test_cases)}: '{case['question']}' ({case['analysis_type']})")
         
         # Call API
         try:
-            # We mock the post request
-            # Since the file is already ingested, this skips ingestion (cache hit)
-            # In a real environment, we'd upload the PDF file
-            # Let's call the local engine API directly to perform query
             engine_url = "http://engine:8001/query" if os.environ.get("IN_DOCKER") else "http://localhost:8001/query"
             data = {
                 "filename": case["filename"],
-                "analysis_type": "comprehensive",
+                "analysis_type": case["analysis_type"],
                 "language": "zh_cn"
             }
             with httpx.Client(timeout=120.0, trust_env=False) as cl:
