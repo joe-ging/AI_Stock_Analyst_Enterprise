@@ -1,145 +1,153 @@
-# 📊 JL Intelligence - Enterprise AI Analyst (Solution Architecture Showcase)
+<div align="right">
+  <a href="README.md"><img src="https://img.shields.io/badge/Language-English-blue?style=for-the-badge" alt="English"></a>
+  <a href="README_zh.md"><img src="https://img.shields.io/badge/语言-简体中文-red?style=for-the-badge" alt="简体中文"></a>
+</div>
 
-> An enterprise-grade, high-availability Retrieval-Augmented Generation (RAG) platform designed for institutional financial analysts. 
-> 
-> **🎯 Architect's Note:** This repository serves as a comprehensive portfolio demonstrating Core Capabilities for **Senior Solutions Architect (SA)** roles, explicitly covering **Cloud-Native Microservices**, **DevOps CI/CD**, **Hybrid Cloud Disaster Recovery (DR)**, **AIOps**, and **TCO Optimization**.
+# 📊 JL Intelligence - Enterprise AI Analyst (Microservices Architecture)
+
+> AI-powered SEC financial analysis tool for institutional investors. Built with a production-ready microservices architecture, supporting distributed asynchronous ingestion, multi-modal semantic caching, and strict Ragas objective auditing.
 
 **Live Demo:** [JL Intelligence](https://jl-intelligence.netlify.app/)
-**Infrastructure Stack:** React · FastAPI · Milvus · Redis · Celery/RabbitMQ · PostgreSQL
-**AI Inference Stack:** DeepSeek (Primary) / Gemini (Fallback) · OpenAINext (Embeddings) · pdfplumber
+**Core Stack:** React · FastAPI · Milvus · Redis · Celery/RabbitMQ · DeepSeek / Gemini / OpenAINext
 
 ---
 
-## 🔹 1. Architectural Evolution: 4 Layers of Enterprise Maturity
+## 🔹 Enterprise Microservices Architecture & Tech Stack
 
-To demonstrate robust SA capabilities, this project was architected not as a simple script, but as a fully evolving enterprise system built across four maturity layers.
+Our system is completely decoupled into specialized microservices, avoiding the bottlenecks of monolithic designs. We utilize an event-driven architecture to handle high-concurrency document processing and low-latency semantic retrieval.
 
-### Layer 1: Cloud-Native Microservices (Containerization)
-The monolithic application was decoupled into highly specialized, isolated Docker containers:
-- **API Gateway (Port 8000)**: Stateless proxy routing UI traffic.
-- **RAG Engine (Port 8001)**: Core LLM orchestration and semantic caching.
-- **Async Workers (Celery)**: Background CPU-heavy nodes processing `pdfplumber` extraction.
-- **Stateful Backing Services**: PostgreSQL (Metadata), Milvus (Vector DB), Redis (Cache), RabbitMQ (Broker).
-
-### Layer 2: DevOps & Automated Deployment (CI/CD)
-- **CI/CD Pipelines**: Automated GitHub Actions trigger `pytest` integration testing (e.g., `test_e2e_stream.py`) on every push.
-- **Zero-Downtime Rollouts**: Deployment scripts (`deploy.sh`) rebuild and gracefully restart stateless application layers without corrupting the stateful database volumes.
-
-### Layer 3: High Availability (HA) & Disaster Recovery (DR)
-Designed for financial sector **RPO/RTO** requirements:
-- **Event-Driven Resilience**: If the DeepSeek API throttles, the Engine seamlessly triggers an **LLM Cascade Fallback** to Gemini 2.5 Flash.
-- **Async Ingestion**: 200+ page SEC PDF ingestion runs on isolated Celery worker queues, preventing HTTP thread pool exhaustion and guaranteeing zero dropped requests under high concurrency.
-
-### Layer 4: AIOps & Observability
-- **Semantic Caching**: Implemented a Redis-based cosine similarity interceptor. If query semantic similarity > 0.97, the system bypasses the LLM, reducing latency to 0ms and slashing API costs.
-- **Post-Generation Objective Audit**: Utilizes a secondary Ragas evaluation loop to ensure 100% Faithfulness and zero hallucinations before rendering the final Institutional Report.
+### Core Tech Stack:
+- **Frontend**: React (SPA), Tailwind CSS
+- **API Gateway & Core Engine**: FastAPI (Python 3.10)
+- **Document Parsing**: `pdfplumber` (for precise layout and table extraction)
+- **Message Broker**: RabbitMQ
+- **Background Workers**: Celery
+- **Vector Database**: Milvus (Standalone) backed by MinIO & etcd
+- **Relational Database**: PostgreSQL (for document metadata tracking)
+- **Caching Layer**: Redis (for Task states and Semantic Caching)
+- **AI Models & Orchestration**: 
+  - **Generation**: DeepSeek-Chat (Primary) with streaming inference via Server-Sent Events (SSE).
+  - **Fallback**: Gemini 2.5 Flash / Pro (Seamless fallback if primary model fails).
+  - **Embeddings**: OpenAINext (`text-embedding-3-small`) with Gemini embedding fallback.
+  - **Orchestration**: LangChain-style RAG pipelines with custom LangGraph-inspired Auditor routing loops.
 
 ---
 
-## 🔹 2. TCO Optimization & Multi-Cloud Migration Strategy
+## 🔹 Microservices Event-Driven Flows (Architecture Diagrams)
 
-A critical competency of a Solutions Architect is balancing performance with the **Total Cost of Ownership (TCO)**. 
+The core strength of our physical architecture is how microservices communicate and listen to each other asynchronously. Here are the three primary system flows:
 
-### The Multi-Cloud Evolution Story
-**Challenge**: Running the full local Milvus cluster + PostgreSQL + Engine + Gateway locally or on a single heavy Cloud instance is resource-intensive (> 6GB RAM) and prevents downgrading instance tiers, leading to high sunk costs. Additionally, regional API blocks required heavy proxy tunneling.
+### 1. Asynchronous Ingestion & Vectorization Flow (The Worker Loop)
 
-**Architectural Solution (Cost Reduced to $0/mo)**:
-1. **SaaS Offloading**: Deprecated the heavy Dockerized Milvus cluster, migrating vector retrieval to **Zilliz Cloud** (Milvus Serverless SaaS).
-2. **Compute Downsizing**: Shrank the memory footprint from 6GB to < 800MB.
-3. **Multi-Cloud Arbitrage**: Migrated the stateless Engine and Gateway to an **AWS EC2 Free Tier (Sydney)**.
-4. **Network Optimization**: Deploying in Sydney natively bypassed regional API blocks for Gemini/OpenAINext, entirely eliminating the need for SOCKS5 proxy tunnels, thereby reducing network latency by over 50%.
-
----
-
-## 🔹 3. Microservices Communication (Deep Dive)
-
-The core strength of the physical architecture is how microservices communicate asynchronously to prevent bottlenecks.
-
-### Flow A: The Asynchronous Ingestion Loop
-*De-risking CPU-heavy document parsing via message queues.*
+When a massive 200-page SEC 10-K report is uploaded, the Engine does not block the user's HTTP request. Instead, it registers the job and delegates the heavy lifting to the Celery Worker cluster via RabbitMQ.
 
 ```mermaid
 sequenceDiagram
-    participant Engine as Engine (FastAPI)
+    participant UI as React Client
+    participant Engine as FastAPI Engine
     participant PG as PostgreSQL
     participant MQ as RabbitMQ
-    participant Worker as Worker (Celery)
-    participant Parser as pdfplumber
-    participant AI as OpenAINext API
-    participant Milvus as Zilliz/Milvus DB
+    participant Worker as Celery Worker
+    participant AI as OpenAINext / Gemini
+    participant Milvus as Milvus DB
     
-    Engine->>PG: Insert Doc Metadata (Status: Pending)
-    Engine->>MQ: Publish Task (File Path, Job ID)
-    Engine-->>Client: Return 202 Accepted (Job ID)
+    UI->>Engine: POST /upload (PDF File)
+    Engine->>PG: Insert Document Metadata (Status: Pending)
+    Engine->>MQ: Publish Ingestion Task (Job ID)
+    Engine-->>UI: Return 202 Accepted (Job ID)
     
-    MQ->>Worker: Consume Task (Listening Loop)
+    MQ->>Worker: Consume Task
     activate Worker
-    Worker->>Parser: Extract structured tables & text
+    Worker->>Worker: Parse with pdfplumber
     Worker->>Worker: Semantic Chunking (1000 chars)
     Worker->>AI: Request Embeddings
-    AI-->>Worker: Return High-Dim Vectors
-    Worker->>Milvus: Upsert Vectors
+    AI-->>Worker: Return Vector Dimensions
+    Worker->>Milvus: Upsert Vectors & Metadata
     Worker->>PG: Update Status -> 'Completed'
     deactivate Worker
 ```
 
-### Flow B: Semantic Caching & Vector Retrieval
-*Optimizing API costs and latency via Redis interception.*
+### 2. Semantic Caching & Hybrid Retrieval Flow (The Query Loop)
+
+To minimize expensive LLM API calls and drastically reduce latency, the Engine intercepts queries and checks a Redis-backed Semantic Cache before hitting the Vector DB.
 
 ```mermaid
 sequenceDiagram
-    participant Engine as Engine (FastAPI)
-    participant AI as OpenAINext
+    participant UI as React Client
+    participant Engine as FastAPI Engine
     participant Redis as Redis Cache
-    participant Milvus as Zilliz/Milvus DB
+    participant AI as OpenAINext (Embeddings)
+    participant Milvus as Milvus DB
     
+    UI->>Engine: GET /query
     Engine->>AI: Embed User Query
     AI-->>Engine: Query Vector
     
     Engine->>Redis: Vector Cosine Similarity Search
     alt Cache Hit (Cosine > 0.97)
-        Redis-->>Engine: Return Cached Analytical Report
-        Engine-->>Client: Serve from Cache (0ms LLM Latency)
+        Redis-->>Engine: Cached Analytical Report
+        Engine-->>UI: Return Cached Report (0ms LLM Latency)
     else Cache Miss
         Redis-->>Engine: Not Found
         Engine->>Milvus: Hybrid Search (Query Vector)
         Milvus-->>Engine: Top-K Relevant Chunks
-        Engine->>Engine: Rerank & Context Assembly
+        Engine->>Engine: Rerank and Context Assembly
     end
 ```
 
-### Flow C: Streaming Inference & The Auditor Loop
-*Ensuring enterprise compliance via SSE streaming and secondary Ragas validation.*
+### 3. Streaming Inference & Objective Auditing Flow (The Generation Loop)
+
+We implement real-time streaming inference using Server-Sent Events (SSE). Once generation finishes, an isolated Ragas auditing process is launched to ensure institutional compliance.
 
 ```mermaid
 sequenceDiagram
-    participant Engine as Engine (FastAPI)
+    participant UI as React Client
+    participant Engine as FastAPI Engine
     participant DeepSeek as DeepSeek API
-    participant Fallback as Gemini API
-    participant Ragas as Ragas Auditor
-    participant Client as React SPA
+    participant Fallback as Gemini API (Fallback)
+    participant Ragas as Ragas Auditor (Gemini Pro)
     
-    Engine->>DeepSeek: Stream Completion (Prompt + Chunks)
+    Engine->>DeepSeek: Stream Completion Request (Prompt + Chunks)
     
-    alt Primary API Fails / Throttled
+    alt DeepSeek Throttled/Fails
         DeepSeek--xEngine: 429 / 500 Error
-        Engine->>Fallback: Trigger Seamless LLM Fallback
+        Engine->>Fallback: Trigger Seamless Fallback
         Fallback-->>Engine: Stream Tokens
-    else Success
+    else DeepSeek Success
         DeepSeek-->>Engine: Stream Tokens
     end
     
-    Engine-->>Client: Yield Tokens via SSE
+    Engine-->>UI: Yield Tokens via SSE (Server-Sent Events)
     
     Note over Engine, Ragas: Post-Generation Audit Phase
-    Engine->>Ragas: Evaluate (Draft vs Original Source)
-    Ragas-->>Engine: Faithfulness Scores & Citations
-    Engine-->>Client: Yield {type: "done", citations, scores}
+    Engine->>Ragas: Evaluate (Draft Report vs Original Chunks)
+    Ragas-->>Engine: Faithfulness & Relevance Scores
+    Engine-->>UI: Yield {type: "done", citations, scores}
 ```
 
 ---
 
-## 🚀 Quick Start (Local Cluster Deployment)
+## 🔹 DevOps & CI/CD Pipeline
+
+The system runs on a containerized environment deployed via automated CI/CD pipelines to ensure reliability and Zero-Downtime deployments.
+
+```mermaid
+graph LR
+    A[Git Push to Main] -->|GitHub Actions| B[CI/CD Pipeline]
+    B --> C[Run PyTests & Linting]
+    C --> D[Build Docker Images]
+    D --> E[Deploy to Remote Server]
+    E --> F[Graceful Restart (docker-compose)]
+```
+
+### Deployment (DevOps & MLOps Maintenance)
+- **Containerization**: Everything runs inside isolated Docker containers managed by `docker-compose`, making horizontal scaling of Celery workers trivial.
+- **Automated Testing**: Every push triggers integration tests (e.g., `test_e2e_stream.py`) to validate the RAG retrieval logic and API connectivity.
+- **Hot-Reload Deployments**: The deployment script (`deploy.sh`) selectively rebuilds and restarts only the modified application containers (`gateway`, `engine`, `worker`), leaving stateful services (`milvus`, `postgres`, `redis`) untouched to ensure zero data corruption.
+
+---
+
+## 🚀 Quick Start (Local Docker Deployment)
 
 ```bash
 # Clone repository
@@ -154,11 +162,26 @@ echo "OPENAINEXT_API_KEY=your_key" >> .env
 # Launch entire microservice cluster
 docker-compose up -d --build
 
-# View worker queue logs
-docker-compose logs -f worker
+# View logs
+docker-compose logs -f engine worker
 ```
 
 **Access the Application:** Navigate to `http://localhost:8000/index.html`
+
+---
+
+## 🔹 Solution Architecture Highlights (Tencent SA Interview Alignment)
+
+This project natively demonstrates several key **Solutions Architect (SA)** principles derived from the codebase's actual implementation, directly aligning with enterprise cloud requirements:
+
+1. **Cost Optimization (TCO) & Semantic Caching:** 
+   LLM inference is expensive. The codebase implements a Redis interceptor (`query_cache`) that computes the cosine similarity of user queries against previous requests. If similarity is > 0.97, the API completely bypasses the Vector DB and LLM layers, delivering a 0ms response and significantly reducing API Token costs.
+2. **High Availability (HA) & Fault Tolerance:** 
+   The system implements a robust **LLM Cascade**. If the primary `DeepSeek-Chat` endpoint hits a rate limit (HTTP 429) or crashes (HTTP 500), the `call_llm_with_fallback` mechanism dynamically routes the stream to `Gemini 2.5 Flash / Pro`. This guarantees system resilience and continuous delivery without the user experiencing downtime.
+3. **Decoupling Compute via Microservices:** 
+   Extracting structured tables from SEC PDFs via `pdfplumber` is highly CPU-bound. Instead of blocking the FastAPI thread pool, the architecture publishes an asynchronous event to RabbitMQ. The Celery Worker cluster consumes this queue, allowing the HTTP API Gateway to scale independently of the ingestion pipeline.
+4. **Zero-Downtime DevOps Delivery:** 
+   The deployment workflow utilizes GitOps principles (GitHub Actions). The custom `deploy.sh` script applies rolling updates specifically to stateless containers (`gateway`, `engine`), intentionally preserving stateful volumes (`postgres`, `milvus`, `redis`) to prevent enterprise data corruption.
 
 ---
 
