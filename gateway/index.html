@@ -246,18 +246,20 @@
                     const decoder = new TextDecoder("utf-8");
                     let done = false;
                     let fullText = "";
+                    let buffer = "";
 
                     while (!done) {
                         const { value, done: readerDone } = await reader.read();
                         done = readerDone;
                         if (value) {
-                            const chunk = decoder.decode(value, { stream: true });
-                            const lines = chunk.split("\n");
-                            for (const line of lines) {
-                                const trimmed = line.trim();
-                                if (trimmed.startsWith("data: ")) {
+                            buffer += decoder.decode(value, { stream: true });
+                            let boundary = buffer.indexOf("\n\n");
+                            while (boundary !== -1) {
+                                const message = buffer.slice(0, boundary).trim();
+                                buffer = buffer.slice(boundary + 2);
+                                if (message.startsWith("data: ")) {
                                     try {
-                                        const rawJson = trimmed.slice(6);
+                                        const rawJson = message.slice(6);
                                         const parsed = JSON.parse(rawJson);
                                         
                                         if (parsed.type === "token" && parsed.content) {
@@ -275,8 +277,10 @@
                                             setError(parsed.content || "Inferencing error encountered");
                                         }
                                     } catch (e) {
+                                        console.error("SSE Parse error:", e, message);
                                     }
                                 }
+                                boundary = buffer.indexOf("\n\n");
                             }
                         }
                     }
