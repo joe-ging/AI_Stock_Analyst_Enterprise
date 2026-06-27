@@ -8,6 +8,7 @@
     <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.22.20/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Noto+Sans+TC:wght@400;700&display=swap');
         body { font-family: 'Inter', 'Noto Sans TC', 'PingFang SC', sans-serif; }
@@ -379,13 +380,11 @@
                                 )}
 
                                 {result !== "" && (
-                                    <div className="prose max-w-none animate-in fade-in slide-in-from-bottom-4 duration-1000">
-                                        {result.split('\n').map((line, i) => {
-                                            if (line.startsWith('### ')) return <h3 key={i} className="text-2xl font-black tracking-tight mt-8 mb-6">{line.replace('### ', '')}</h3>;
-                                            if (line.startsWith('#### ')) return <h4 key={i} className="text-lg font-bold mt-6 mb-3">{line.replace('#### ', '')}</h4>;
-                                            if (line.trim().startsWith('- ')) return <li key={i} className="ml-6 text-gray-600 font-medium mb-2">{line.replace('- ', '')}</li>;
-                                            return <p key={i} className="text-gray-700 leading-relaxed mb-4 font-medium" dangerouslySetInnerHTML={{__html: line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')}}></p>;
-                                        })}
+                                    <div className="prose max-w-none animate-in fade-in slide-in-from-bottom-4 duration-1000" dangerouslySetInnerHTML={{ __html: marked.parse(result) }} />
+                                )}
+
+                                {result !== "" && (
+                                    <div className="prose max-w-none">
 
                                         {/* Citations section */}
                                         {citations && citations.length > 0 && (
