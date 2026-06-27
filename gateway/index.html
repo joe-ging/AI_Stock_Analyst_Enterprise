@@ -490,7 +490,17 @@
                                         <div className="inline-flex items-center gap-2 bg-indigo-50 border border-indigo-100 text-indigo-700 px-4 py-2 rounded-full text-xs font-bold shadow-sm self-start">
                                             {t.originalDoc}
                                         </div>
-                                        <div className="grid grid-cols-3 gap-2 mt-1">
+                                    </div>
+                                )}
+
+                                {result !== "" && (
+                                    <div className="prose max-w-none animate-in fade-in slide-in-from-bottom-4 duration-1000" dangerouslySetInnerHTML={{ __html: marked.parse(result) }} />
+                                )}
+
+                                {result !== "" && (
+                                    <div className="prose max-w-none mt-10">
+                                        <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">{t.ragasScore}</div>
+                                        <div className="grid grid-cols-3 gap-3">
                                             {[
                                                 {key: "faithfulness", label: "Faithfulness", color: "indigo"},
                                                 {key: "answer_recall", label: "Answer Recall", color: "emerald"},
@@ -499,17 +509,17 @@
                                                 const val = ragasScores ? (ragasScores[key] ?? 0) : null;
                                                 const pct = val !== null ? Math.round(val * 100) : null;
                                                 return (
-                                                    <div key={key} className={`bg-${color}-50/50 border border-${color}-100/60 rounded-2xl p-3 relative overflow-hidden transition-all duration-500`}>
+                                                    <div key={key} className={`bg-${color}-50 border border-${color}-100 rounded-2xl p-4 relative overflow-hidden`}>
                                                         {pct === null && (
                                                             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent animate-pulse" />
                                                         )}
-                                                        <div className="flex justify-between items-baseline mb-1">
-                                                            <span className={`text-[8px] font-black uppercase tracking-wider text-${color}-600`}>{label}</span>
-                                                            <span className={`text-xs font-black text-${color}-700`}>
-                                                                {pct !== null ? `${pct}%` : <span className="text-[8px] font-bold text-gray-400 animate-pulse">Auditing...</span>}
+                                                        <div className="flex justify-between items-baseline mb-2">
+                                                            <span className={`text-[9px] font-black uppercase tracking-wider text-${color}-600`}>{label}</span>
+                                                            <span className={`text-lg font-black text-${color}-700`}>
+                                                                {pct !== null ? `${pct}%` : <span className="text-xs font-bold text-gray-400 animate-pulse">Auditing...</span>}
                                                             </span>
                                                         </div>
-                                                        <div className="h-1 bg-gray-100 rounded-full overflow-hidden shadow-inner">
+                                                        <div className="h-1.5 bg-white rounded-full overflow-hidden shadow-inner">
                                                             <div 
                                                                 className={`h-full bg-${color}-500 rounded-full transition-all duration-1000`}
                                                                 style={{width: `${pct !== null ? pct : 0}%`}}
@@ -519,15 +529,7 @@
                                                 );
                                             })}
                                         </div>
-                                    </div>
-                                )}
 
-                                {result !== "" && (
-                                    <div className="prose max-w-none animate-in fade-in slide-in-from-bottom-4 duration-1000" dangerouslySetInnerHTML={{ __html: marked.parse(result) }} />
-                                )}
-
-                                {result !== "" && (
-                                    <div className="prose max-w-none">
                                         <div className="mt-16 pt-8 border-t border-gray-100 flex justify-between items-center text-[10px] font-bold text-gray-400 uppercase tracking-tight">
                                             <span>Inference Terminated</span>
                                             <span>Generated by JL Agent on Gemini 2.5 Flash</span>
