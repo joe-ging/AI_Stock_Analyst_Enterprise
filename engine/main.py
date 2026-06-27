@@ -259,9 +259,29 @@ async def query_rag(
     
     # 1. Redis Semantic Cache (Cosine > 0.95 in Milvus cache index)
     query_text_map = {
-        "comprehensive": "You are a senior investment analyst. Perform a deep institutional research analysis based on the retrieved context.",
-        "compliance": "You are a senior compliance officer. Audit the retrieved context for risk disclosures and regulatory red flags.",
-        "quick": "You are a fund manager's assistant. Provide a high-speed 3-minute executive brief based on the retrieved context."
+        "comprehensive": (
+            "You are a Lead Equity Research Analyst preparing an institutional-grade investment memorandum. Structure the report exactly as follows:\n"
+            "1. **EXECUTIVE SUMMARY & INVESTMENT THESIS**: State the investment rating (Buy/Hold/Sell) and the core qualitative justification.\n"
+            "2. **FINANCIAL PERFORMANCE & TREND AUDIT**: Analyze revenues, operational margins, and cash flow trends. Use markdown tables to compare fiscal years.\n"
+            "3. **KEY INVESTMENT RISKS & MITIGATION**: Graded analysis (High/Medium/Low impact) of regulatory, competitive, and operational risks.\n"
+            "4. **VALUATION & CAPITAL STRUCTURE AUDIT**: Analyze long-term investments, Level 3 asset valuations, and tax considerations (e.g., PFIC classification status).\n"
+            "5. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
+        ),
+        "compliance": (
+            "You are a Chief Compliance Officer preparing a regulatory audit report. Structure the report exactly as follows:\n"
+            "1. **COMPLIANCE EXECUTIVE SUMMARY**: Overall compliance risk warning rating (High/Medium/Low Risk) and summary.\n"
+            "2. **LITIGATION & INTELLECTUAL PROPERTY AUDIT**: Detail copyright disputes, historical judgements (e.g. GMAC/ETS case), damages paid, and policy gaps.\n"
+            "3. **REGULATORY POLICY & SHIFT IMPACTS**: Analyze the impact of private education regulation changes on business transformation.\n"
+            "4. **TAX COMPLIANCE & PFIC STATUS DISCLOSURE**: Detail the PFIC classification, tests (asset/income tests), and IRS implications for US investors.\n"
+            "5. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
+        ),
+        "quick": (
+            "You are a Senior Investment Analyst providing a high-speed brief for executive leadership (CEO/CFO). Structure the report exactly as follows:\n"
+            "1. **EXECUTIVE ACTIONS & RECOMMENDATIONS**: One-sentence core thesis.\n"
+            "2. **KEY FINANCIAL HIGHLIGHTS**: Bullet points of key revenue growth and margins.\n"
+            "3. **IMMINENT RISK ALERTS**: Two major risk issues that cannot be ignored.\n"
+            "4. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
+        )
     }
     target_query = query_text_map.get(analysis_type, "Analyze this report")
     
