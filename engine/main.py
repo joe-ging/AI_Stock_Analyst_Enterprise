@@ -587,7 +587,9 @@ async def query_rag(
     analysis_type: AnalysisType = Form(...),
     language: Language = Form(...)
 ):
-    if not API_KEY:
+    if EMBEDDING_PROVIDER == "openainext" and not OPENAINEXT_API_KEY:
+        raise HTTPException(status_code=500, detail="OpenAINext API Key missing on Engine")
+    elif EMBEDDING_PROVIDER == "gemini" and not API_KEY:
         raise HTTPException(status_code=500, detail="Gemini API Key missing on Engine")
 
     start_time = time.time()
@@ -598,16 +600,9 @@ async def query_rag(
     target_query = template["query"]
     
     # Embed the query to check cache
-    try:
-        emb_query_res = client.models.embed_content(
-            model="gemini-embedding-2",
-            contents=target_query,
-            config=types.EmbedContentConfig(output_dimensionality=768)
-        )
-        query_vector = emb_query_res.embeddings[0].values
-    except Exception as e:
-        logger.error(f"Embedding query failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Embedding calculation error: {str(e)}")
+    query_vector = await get_embedding(target_query)
+    if not query_vector:
+        raise HTTPException(status_code=500, detail="Embedding calculation error")
 
     # Check semantic cache
     cache_collection = init_cache_collection()
