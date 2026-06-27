@@ -83,8 +83,7 @@ REPORT_TEMPLATES = {
             "   - **Table B: Balance Sheet Audit**: Cash & Cash Equivalents, Term Deposits, Short-term Investments, Total Assets, Total Liabilities, and Total Shareholders' Equity.\n"
             "   - **Table C: Cash Flow Audit**: Net cash provided by operating activities, Net cash used in investing activities, and Net cash used in financing activities.\n"
             "4. **VALUATION, LEVEL 3 ASSETS & CAPITAL STRUCTURE AUDIT**: Audit the valuation methodologies (e.g., DCF model inputs, comparable multiples), unobservable inputs for Level 3 assets, and critical tax considerations (specifically PFIC classification status and cross-border tax treatment).\n"
-            "5. **KEY INVESTMENT RISKS & MITIGATION MATRIX**: Provide a graded matrix table (High/Medium/Low impact) evaluating regulatory, geopolitical, competitive, and operational risks alongside specific mitigation factors.\n"
-            "6. **CITATIONS / REFERENCES**: List all footnote citations sequentially. Each citation MUST strictly follow the SEC Bluebook citation style (Rule 18 / Rule 21.4) (e.g., '[Company Name], Form 20-F, at [Page Number] (FY[Year]).' like: 'New Oriental Education & Technology Group Inc., Form 20-F, at 15 (FY2025).'). Do not use generic filenames."
+            "5. **KEY INVESTMENT RISKS & MITIGATION MATRIX**: Provide a graded matrix table (High/Medium/Low impact) evaluating regulatory, geopolitical, competitive, and operational risks alongside specific mitigation factors."
         ),
         "struct": (
             "You are a Lead Equity Research Analyst preparing an institutional-grade investment memorandum for executive leadership and the investment committee. "
@@ -94,8 +93,7 @@ REPORT_TEMPLATES = {
             "2. **BUSINESS DESCRIPTION & SEGMENT BREAKDOWN**: Detailed analysis of segments and revenue streams with comparison tables.\n"
             "3. **FINANCIAL PERFORMANCE & CASH FLOW AUDIT**: Audit margins, leverage, and free cash flow trends.\n"
             "4. **VALUATION, LEVEL 3 ASSETS & CAPITAL STRUCTURE AUDIT**: Valuation model assumptions (DCF/comps), Level 3 assets unobservable inputs, and PFIC tax status analysis.\n"
-            "5. **KEY INVESTMENT RISKS & MITIGATION MATRIX**: Graded table (High/Medium/Low) of regulatory, geopolitical, and business risks and mitigations.\n"
-            "6. **CITATIONS / REFERENCES**: List all footnote citations sequentially, strictly following the SEC Bluebook citation style (Rule 18 / Rule 21.4)."
+            "5. **KEY INVESTMENT RISKS & MITIGATION MATRIX**: Graded table (High/Medium/Low) of regulatory, geopolitical, and business risks and mitigations."
         )
     },
     "compliance": {
@@ -106,8 +104,7 @@ REPORT_TEMPLATES = {
             "1. **COMPLIANCE EXECUTIVE SUMMARY**: Overall compliance risk posture summary, critical compliance vulnerabilities, and corrective action priority levels.\n"
             "2. **REGULATORY POLICY & SHIFT IMPACTS**: Detailed audit of the PCAOB audit inspection history, HFCAA compliance, data cross-border transfers (e.g., CAC filings), and Generative AI service regulatory compliance requirements.\n"
             "3. **LITIGATION, INTELLECTUAL PROPERTY & AUDIT GAPS**: Comprehensive analysis of copyrights/trademark disputes, historical administrative fines, material litigations, and control gaps in contract compliance.\n"
-            "4. **VIE STRUCTURE, TAX COMPLIANCE & PFIC DISCLOSURE**: Audit of Variable Interest Entity (VIE) regulatory validity, foreign exchange repatriation rules, PFIC (Passive Foreign Investment Company) status tests, and U.S. federal income tax implications.\n"
-            "5. **CITATIONS / REFERENCES**: List all footnote citations sequentially. Each citation MUST strictly follow the SEC Bluebook citation style (Rule 18 / Rule 21.4) (e.g., '[Company Name], Form 20-F, at [Page Number] (FY[Year]).' like: 'New Oriental Education & Technology Group Inc., Form 20-F, at 15 (FY2025).'). Do not use generic filenames."
+            "4. **VIE STRUCTURE, TAX COMPLIANCE & PFIC DISCLOSURE**: Audit of Variable Interest Entity (VIE) regulatory validity, foreign exchange repatriation rules, PFIC (Passive Foreign Investment Company) status tests, and U.S. federal income tax implications."
         ),
         "struct": (
             "You are a Chief Compliance Officer preparing a regulatory audit report for the Board of Directors and the Audit Committee. "
@@ -116,8 +113,7 @@ REPORT_TEMPLATES = {
             "1. **COMPLIANCE EXECUTIVE SUMMARY**: Clear risk posture summary and correction action priority levels.\n"
             "2. **REGULATORY POLICY & SHIFT IMPACTS**: PCAOB, HFCAA, data security, and generative AI regulation audit.\n"
             "3. **LITIGATION, INTELLECTUAL PROPERTY & AUDIT GAPS**: Audits of legal disputes, fine history, and contract control gaps.\n"
-            "4. **VIE STRUCTURE, TAX COMPLIANCE & PFIC DISCLOSURE**: Legal validity of VIE structure, capital control, and PFIC tax status.\n"
-            "5. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
+            "4. **VIE STRUCTURE, TAX COMPLIANCE & PFIC DISCLOSURE**: Legal validity of VIE structure, capital control, and PFIC tax status."
         )
     },
     "quick": {
@@ -126,16 +122,14 @@ REPORT_TEMPLATES = {
             "Provide a high-speed brief for executive leadership (CEO/CFO). Structure the report exactly as follows:\n"
             "1. **EXECUTIVE ACTIONS & RECOMMENDATIONS**: One-sentence core thesis.\n"
             "2. **KEY FINANCIAL HIGHLIGHTS**: Bullet points of key revenue growth and margins.\n"
-            "3. **IMMINENT RISK ALERTS**: Two major risk issues that cannot be ignored.\n"
-            "4. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
+            "3. **IMMINENT RISK ALERTS**: Two major risk issues that cannot be ignored."
         ),
         "struct": (
             "You are a Senior Investment Analyst providing a high-speed brief for executive leadership (CEO/CFO). "
             "The brief must be extremely concise, bulleted, and structured exactly as follows:\n\n"
             "1. **EXECUTIVE ACTIONS & RECOMMENDATIONS**: One-sentence core rating and actionable recommendation.\n"
             "2. **KEY FINANCIAL HIGHLIGHTS**: Bullet points of key revenue growth and margins.\n"
-            "3. **IMMINENT RISK ALERTS**: Two major risk issues that cannot be ignored.\n"
-            "4. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
+            "3. **IMMINENT RISK ALERTS**: Two major risk issues that cannot be ignored."
         )
     }
 }
@@ -173,12 +167,12 @@ def build_final_prompt(target_query: str, struct_instructions: str, retrieved_co
         f"{target_query}\n\n"
         f"IMPORTANT PROFESSIONAL FINANCIAL REPORTING INSTRUCTIONS:\n"
         f"{struct_instructions}\n\n"
-        f"STRICT CITATION & FORMAT CONSTRAINTS:\n"
+        f"- STRICT CITATION & FORMAT CONSTRAINTS:\n"
         f"- You MUST ONLY use the facts, figures, and page numbers present in the [RETRIEVED DATA] block below. Do NOT use your pre-trained memory or make up page numbers.\n"
         f"- DO NOT introduce any external regulatory codes, tax form numbers, or specific tax rates UNLESS they are explicitly written in the [RETRIEVED DATA] below.\n"
         f"- For every financial figure, percentage, rate, date, or specific claim, you MUST append a sequential superscript footnote indicator (e.g., <sup>1</sup>, <sup>2</sup>).\n"
         f"- {citation_instruction}\n"
-        f"- CRITICAL TABLE FORMAT: If you output any Markdown tables, you MUST strictly close them with a blank line before starting any subsequent text to prevent rendering corruption.\n\n"
+        f"- STRICT MARKDOWN TABULAR CONSTRAINT: Whenever you render a Markdown table, you MUST terminate it with a clean new line AND a horizontal rule (---) or a blank paragraph. Subsequent text, paragraphs, or list items must NEVER be merged into the table grid. Keep the body text and tables strictly isolated.\n\n"
         f"[RETRIEVED DATA FROM SEC FILING]:\n{retrieved_context}"
     )
 

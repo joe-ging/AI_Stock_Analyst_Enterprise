@@ -163,15 +163,11 @@ _SECTION_PATTERNS = [
     re.compile(r"key\s+information", re.IGNORECASE),
 ]
 
-_MAX_CHARS = 80_000  # Max text to pass to LLM context
-
-
 async def fetch_filing_text(url: str) -> str:
     """
-    Download and extract clean text from an SEC HTM filing.
+    Download and extract full clean text from an SEC HTM filing.
     
-    Focuses on MD&A + Financial Statements sections.
-    Returns plain text, capped at _MAX_CHARS characters.
+    Returns the complete plain text of the document.
     """
     headers = {
         "User-Agent": "JL-Intelligence research@jlintelligence.com",
@@ -191,57 +187,12 @@ async def fetch_filing_text(url: str) -> str:
     # Get all text blocks
     full_text = soup.get_text(separator="\n", strip=True)
 
-    # Try to extract only key sections if document is very long
-    if len(full_text) > _MAX_CHARS * 2:
-        extracted = _extract_key_sections(full_text)
-        if len(extracted) > 1000:
-            full_text = extracted
-
     # Clean up excessive whitespace
     full_text = re.sub(r"\n{3,}", "\n\n", full_text)
     full_text = re.sub(r" {2,}", " ", full_text)
 
-    result = full_text[:_MAX_CHARS]
-    logger.info(f"[EDGAR] Extracted {len(result):,} chars from {url}")
-    return result
-
-
-def _extract_key_sections(text: str) -> str:
-    """
-    Heuristically extract MD&A and Financial sections from the full filing text.
-    Looks for section headers and grabs surrounding content.
-    """
-    lines = text.split("\n")
-    included_ranges: list[tuple[int, int]] = []
-
-    for i, line in enumerate(lines):
-        line_stripped = line.strip()
-        for pattern in _SECTION_PATTERNS:
-            if pattern.search(line_stripped) and len(line_stripped) < 200:
-                # Grab 300 lines around this section header
-                start = max(0, i - 5)
-                end = min(len(lines), i + 300)
-                included_ranges.append((start, end))
-                break
-
-    if not included_ranges:
-        return text[:_MAX_CHARS]
-
-    # Merge overlapping ranges
-    included_ranges.sort()
-    merged = [included_ranges[0]]
-    for start, end in included_ranges[1:]:
-        if start <= merged[-1][1]:
-            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
-        else:
-            merged.append((start, end))
-
-    result_lines = []
-    for start, end in merged:
-        result_lines.extend(lines[start:end])
-        result_lines.append("\n--- [Section Break] ---\n")
-
-    return "\n".join(result_lines)
+    logger.info(f"[EDGAR] Extracted FULL filing text: {len(full_text):,} chars from {url}")
+    return full_text
 
 
 # ─── Text chunking ─────────────────────────────────────────────────────────────

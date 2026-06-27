@@ -152,6 +152,19 @@
             const [ragasScores, setRagasScores] = useState(null);
  
             const t = LANG_DICT[lang];
+
+            const ensureClosedMarkdownTables = (md) => {
+                if (!md) return "";
+                const lines = md.split("\n");
+                if (lines.length > 0) {
+                    const lastLine = lines[lines.length - 1].trim();
+                    // If the streaming content ends mid-table row, append clean breaks
+                    if (lastLine.startsWith("|")) {
+                        return md + "\n\n\n";
+                    }
+                }
+                return md;
+            };
  
             React.useEffect(() => {
                 const checkHealth = async () => {
@@ -494,7 +507,7 @@
                                 )}
 
                                 {result !== "" && (
-                                    <div className="prose max-w-none animate-in fade-in slide-in-from-bottom-4 duration-1000" dangerouslySetInnerHTML={{ __html: marked.parse(result) }} />
+                                    <div className="prose max-w-none animate-in fade-in slide-in-from-bottom-4 duration-1000" dangerouslySetInnerHTML={{ __html: marked.parse(ensureClosedMarkdownTables(result)) }} />
                                 )}
 
                                 {result !== "" && (
@@ -502,9 +515,9 @@
                                         <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">{t.ragasScore}</div>
                                         <div className="grid grid-cols-3 gap-3">
                                             {[
-                                                {key: "faithfulness", label: "Faithfulness", color: "indigo", style: { bg: "bg-indigo-50", border: "border-indigo-100", text: "text-indigo-600", valText: "text-indigo-700", bar: "bg-indigo-500" }},
-                                                {key: "answer_recall", label: "Answer Recall", color: "emerald", style: { bg: "bg-emerald-50", border: "border-emerald-100", text: "text-emerald-600", valText: "text-emerald-700", bar: "bg-emerald-500" }},
-                                                {key: "relevance", label: "Relevance", color: "violet", style: { bg: "bg-violet-50", border: "border-violet-100", text: "text-violet-600", valText: "text-violet-700", bar: "bg-violet-500" }}
+                                                {key: "faithfulness", label: "Faithfulness", style: { bg: "bg-indigo-50", border: "border-indigo-100", text: "text-indigo-600", valText: "text-indigo-700", bar: "bg-indigo-500" }},
+                                                {key: "answer_recall", label: "Answer Recall", style: { bg: "bg-emerald-50", border: "border-emerald-100", text: "text-emerald-600", valText: "text-emerald-700", bar: "bg-emerald-500" }},
+                                                {key: "relevance", label: "Relevance", style: { bg: "bg-violet-50", border: "border-violet-100", text: "text-violet-600", valText: "text-violet-700", bar: "bg-violet-500" }}
                                             ].map(({key, label, style}) => {
                                                 const val = ragasScores ? (ragasScores[key] ?? 0) : null;
                                                 const pct = val !== null ? Math.round(val * 100) : null;
