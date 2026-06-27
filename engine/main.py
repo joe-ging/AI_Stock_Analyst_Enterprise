@@ -604,15 +604,20 @@ async def query_rag(
     try:
         cur.execute("SELECT id, company_name, doc_type, doc_year FROM documents WHERE filename = %s;", (filename,))
         row = cur.fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Document not found. Please upload first.")
-        doc_id = row[0]
-        db_company_name = row[1]
-        db_doc_type = row[2]
-        db_doc_year = row[3]
+        if row:
+            doc_id = row[0]
+            db_company_name = row[1]
+            db_doc_type = row[2]
+            db_doc_year = row[3]
     finally:
         cur.close()
         conn.close()
+        
+    if not row:
+        if filename.startswith("EDGAR:"):
+            doc_id, db_company_name, db_doc_type, db_doc_year = await ingest_edgar_on_the_fly(filename)
+        else:
+            raise HTTPException(status_code=404, detail="Document not found. Please upload first.")
     
     # 2. Redis Semantic Cache (Cosine > 0.97 in Milvus cache index)
     template = REPORT_TEMPLATES[analysis_type.value]
@@ -820,6 +825,74 @@ async def query_rag(
 
     return output_data
 
+async def ingest_edgar_on_the_fly(filename: str):
+    """Dynamically fetch and ingest EDGAR document if it does not exist."""
+    if not filename.startswith("EDGAR:"):
+        raise HTTPException(status_code=404, detail="Document not found. Please upload first.")
+        
+    parts = filename.split(":")
+    ticker = parts[1]
+    years_str = parts[2]
+    years = years_str.split(",")
+    
+    from edgar_fetcher import fetch_edgar_chunks
+    logger.info(f"Triggering on-the-fly EDGAR ingestion for {ticker} {years}...")
+    results = await fetch_edgar_chunks(ticker, years)
+    
+    valid_years = [y for y, chunks in results.items() if len(chunks) > 0]
+    if not valid_years:
+        raise HTTPException(status_code=404, detail=f"No SEC EDGAR filings found for {ticker} in years {years}")
+    
+    target_year = valid_years[0]
+    chunks = results[target_year]
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "INSERT INTO documents (filename, company_name, doc_type, doc_year) VALUES (%s, %s, %s, %s) RETURNING id;", 
+            (filename, ticker.upper(), "10-K/20-F", target_year)
+        )
+        doc_id = cur.fetchone()[0]
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        cur.close()
+        return_db_connection(conn)
+        
+    get_milvus_connection()
+    from pymilvus import Collection
+    collection = Collection(DOC_CHUNKS_COLLECTION_NAME)
+    
+    async def embed_chunk(chunk_dict, index):
+        vec = await get_embedding(chunk_dict["text"])
+        if not vec:
+            return None
+        return {
+            "document_id": doc_id,
+            "page_number": index + 1,
+            "parent_text": chunk_dict["text"],
+            "child_text": chunk_dict["text"],
+            "embedding": vec
+        }
+    
+    batch_results = await asyncio.gather(*[embed_chunk(c, i) for i, c in enumerate(chunks)])
+    valid_results = [r for r in batch_results if r is not None]
+    
+    if valid_results:
+        collection.insert([
+            [r["document_id"] for r in valid_results],
+            [r["page_number"] for r in valid_results],
+            [r["parent_text"] for r in valid_results],
+            [r["child_text"] for r in valid_results],
+            [r["embedding"] for r in valid_results],
+        ])
+        collection.flush()
+        
+    return doc_id, ticker.upper(), "10-K/20-F", target_year
+
 # --- Streaming SSE Endpoint ---
 
 async def _build_rag_context(filename: str, analysis_type: str, language: str):
@@ -832,15 +905,20 @@ async def _build_rag_context(filename: str, analysis_type: str, language: str):
     try:
         cur.execute("SELECT id, company_name, doc_type, doc_year FROM documents WHERE filename = %s;", (filename,))
         row = cur.fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Document not found.")
-        doc_id = row[0]
-        db_company_name = row[1]
-        db_doc_type = row[2]
-        db_doc_year = row[3]
+        if row:
+            doc_id = row[0]
+            db_company_name = row[1]
+            db_doc_type = row[2]
+            db_doc_year = row[3]
     finally:
         cur.close()
         return_db_connection(conn)
+        
+    if not row:
+        if filename.startswith("EDGAR:"):
+            doc_id, db_company_name, db_doc_type, db_doc_year = await ingest_edgar_on_the_fly(filename)
+        else:
+            raise HTTPException(status_code=404, detail="Document not found.")
 
     template = REPORT_TEMPLATES.get(analysis_type)
     if not template:
