@@ -128,9 +128,17 @@ async def generate_all():
             # Direct Call DeepSeek
             try:
                 report_content = call_deepseek(final_prompt, model="deepseek-chat")
-                print(report_content)
+                sys.stderr.write(f"\n--- GENERATED REPORT ---\n{report_content}\n")
+                sys.stderr.flush()
+                
+                # Append to file
+                with open("/app/reports_output.md", "a", encoding="utf-8") as f:
+                    f.write(f"\n# REPORT TYPE: {atype.upper()} | LANGUAGE: {target_lang.upper()}\n")
+                    f.write(report_content)
+                    f.write("\n\n---\n")
             except Exception as e:
-                print(f"DeepSeek call failed: {e}")
+                sys.stderr.write(f"DeepSeek call failed: {e}\n")
+                sys.stderr.flush()
 
 if __name__ == "__main__":
     asyncio.run(generate_all())
