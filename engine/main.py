@@ -404,6 +404,7 @@ async def ingest_document(file: UploadFile = File(...)):
             get_milvus_connection()
             if utility.has_collection("stock_analysis_chunks"):
                 collection = Collection("stock_analysis_chunks")
+                collection.load()
                 cnt_res = collection.query(expr=f"document_id == {doc_id}", output_fields=["id"])
                 if len(cnt_res) > 0:
                     logger.info(f"Document {file.filename} already fully indexed in Milvus (doc_id={doc_id}, vectors={len(cnt_res)}). Skipping Ingestion.")
