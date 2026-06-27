@@ -150,10 +150,11 @@ LANG_MAP = {
 def build_citation_instruction(filename: str) -> str:
     """Generates a generic citation format instruction based on the uploaded filename."""
     return (
-        f"You must strictly label every fact, financial figure, or date copied from the retrieved data "
-        f"with its original page number using the format '[Page X]' (where X is the actual page number from the retrieved block, e.g., '[Page 15]'). "
-        f"Do NOT write any HTML tags like <sup>, and do NOT write any separate 'Citations', 'References', or bibliography section at the end of the report. "
-        f"We will compile the footer citations dynamically on the backend."
+        f"MANDATORY CITATION DENSITY RULE: For EVERY single financial figure, revenue number, margin, percentage, date, "
+        f"or factual claim you output in this report, you MUST immediately append its original page source in the format '[Page X]' "
+        f"(where X is the actual page number from the retrieved block, e.g., '[Page 15]'). "
+        f"There must be NO statistics or financial numbers without a page reference next to them. Do NOT skip any numbers. "
+        f"Do NOT write any HTML tags like <sup>, and do NOT write any separate 'Citations' or 'References' footer section."
     )
 
 def build_final_prompt(target_query: str, struct_instructions: str, retrieved_context: str, target_lang: str, filename: str) -> str:
@@ -881,8 +882,8 @@ async def _build_rag_context(filename: str, analysis_type: str, language: str):
     def search_sync(qv):
         return collection.search(
             data=[qv], anns_field="embedding",
-            param={"metric_type": "COSINE", "params": {"ef": 64}},
-            limit=3, expr=f"document_id == {doc_id}",
+            param={"metric_type": "COSINE", "params": {"ef": 128}},
+            limit=15, expr=f"document_id == {doc_id}",
             output_fields=["page_number", "parent_text", "child_text"]
         )
     search_results = await asyncio.gather(*[asyncio.to_thread(search_sync, qv) for qv in q_vectors])
