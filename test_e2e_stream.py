@@ -21,10 +21,16 @@ def test_health():
 
 def test_stream_analysis():
     print("\n=== Testing Stream Analysis Flow ===")
-    # 模拟真实上传测试
     url = "http://localhost:80/analyze/stream"
-    # 构造一个假 PDF 文件模拟上传
-    files = {"file": ("test_doc.pdf", b"%PDF-1.4 dummy content", "application/pdf")}
+    try:
+        # Load the real PDF from local directory
+        with open("FY2025 Annual Report_20-F.pdf", "rb") as f:
+            pdf_bytes = f.read()
+    except Exception as e:
+        print(f"❌ Failed to load local test PDF: {e}")
+        return False
+        
+    files = {"file": ("FY2025 Annual Report_20-F.pdf", pdf_bytes, "application/pdf")}
     data = {"analysis_type": "quick", "language": "zh_cn"}
     
     start_time = time.time()
