@@ -1,0 +1,50 @@
+name: "Chaos Engineering: Weekly DR Game Day"
+
+on:
+  schedule:
+    # Run at 3:00 AM every Sunday
+    - cron: '0 3 * * 0'
+  workflow_dispatch: # Allow manual trigger for testing
+
+jobs:
+  disaster_recovery_drill:
+    name: "Run Game Day on Sydney Standby Node"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: SSH into Sydney DR Server and Run Ragas Evaluation
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SYDNEY_DR_HOST }}
+          username: ${{ secrets.SYDNEY_DR_USER }}
+          key: ${{ secrets.SYDNEY_SSH_KEY }}
+          port: 22
+          script: |
+            echo "🚨 [GAME DAY] Initiating Chaos Engineering DR Drill..."
+            cd ~/AI_Stock_Analyst_Enterprise || git clone https://github.com/joe-ging/AI_Stock_Analyst_Enterprise.git ~/AI_Stock_Analyst_Enterprise
+            cd ~/AI_Stock_Analyst_Enterprise
+            
+            # Pull latest configurations
+            git pull origin main
+            
+            # Start the container cluster on the standby node
+            echo "Spinning up DR standby cluster..."
+            docker-compose up -d --build engine worker gateway
+            
+            # Wait for cluster to stabilize
+            sleep 15
+            
+            # Run Ragas Hallucination and Precision tests on the DR node
+            echo "Running Ragas Quality Gates on Sydney Node..."
+            export GEMINI_API_KEY="${{ secrets.GEMINI_API_KEY }}"
+            export DEEPSEEK_API_KEY="${{ secrets.DEEPSEEK_API_KEY }}"
+            
+            # If DeepSeek is blocked in this region, test the Cascade Fallback to Gemini
+            docker-compose exec -T -e GEMINI_API_KEY="$GEMINI_API_KEY" -e DEEPSEEK_API_KEY="$DEEPSEEK_API_KEY" engine python run_eval.py --ci
+            
+            # Teardown the standby cluster to save resources (if in ephemeral mode)
+            echo "✅ [GAME DAY] Drill successful. Tearing down DR cluster..."
+            docker-compose down

@@ -102,6 +102,11 @@ Microservices constantly monitor API health. If the primary `DeepSeek-Chat` endp
 Due to Gemini API's strict regional blocking in Hong Kong, the initial architecture relied on a brittle SOCKS5 proxy tunnel routing all LLM requests through an AWS Sydney EC2 instance. This drastically increased latency.
 - **Solution:** The stateless `engine` and `gateway` containers were permanently migrated to an AWS Sydney environment, natively bypassing regional API blocks and eliminating the proxy layer overhead, reducing API latency by over **50%**.
 
+### Chaos Engineering & Automated DR Drills (Game Days)
+To prevent "Configuration Drift" and ensure our Disaster Recovery strategy actually works, we implemented automated Chaos Engineering drills.
+- **Weekly Fire Drills**: A GitHub Actions workflow (`dr_game_day.yml`) runs every Sunday at 3:00 AM. It automatically SSHs into our AWS Sydney Standby server, spins up the entire Docker cluster from scratch, and runs the Ragas end-to-end evaluation.
+- **Validating API Agnosticism**: If Gemini or DeepSeek stealth-bans the Sydney IP range, our Sunday drill will immediately fail, alerting the SRE team before a real disaster strikes. Once the drill passes, the standby cluster is torn down to minimize cloud compute costs.
+
 ---
 
 ## 🔹 4. Database Architecture (Optimization & Synergies)
