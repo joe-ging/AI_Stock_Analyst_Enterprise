@@ -1,0 +1,38 @@
+{
+  "title": "FastAPI Enterprise Dashboard",
+  "timezone": "browser",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Total API Requests",
+      "targets": [
+        {
+          "expr": "sum(fastapi_requests_total)",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "API Request Duration (seconds)",
+      "targets": [
+        {
+          "expr": "rate(fastapi_requests_duration_seconds_sum[1m]) / rate(fastapi_requests_duration_seconds_count[1m])",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      }
+    }
+  ]
+}
