@@ -600,7 +600,7 @@ async def query_rag(
     target_query = template["query"]
     
     # Embed the query to check cache
-    cache_query_key = f"Language: {language.value} | Query: {target_query}"
+    cache_query_key = f"Document: {filename} | Language: {language.value} | Query: {target_query}"
     query_vector = await get_embedding(cache_query_key)
     if not query_vector:
         raise HTTPException(status_code=500, detail="Embedding calculation error")
@@ -852,15 +852,18 @@ async def _build_rag_context(filename: str, analysis_type: str, language: str):
                 except Exception as e:
                     logger.error(f"[Cache] Failed to parse cached data: {e}")
     
-    # Retrieve doc_id
+    # Retrieve doc_id and metadata
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        cur.execute("SELECT id FROM documents WHERE filename = %s;", (filename,))
+        cur.execute("SELECT id, company_name, doc_type, doc_year FROM documents WHERE filename = %s;", (filename,))
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Document not found.")
         doc_id = row[0]
+        db_company_name = row[1]
+        db_doc_type = row[2]
+        db_doc_year = row[3]
     finally:
         cur.close()
         return_db_connection(conn)
@@ -919,7 +922,10 @@ async def _build_rag_context(filename: str, analysis_type: str, language: str):
         "query_vector": query_vector,
         "cache_collection": cache_collection,
         "analysis_type": analysis_type,
-        "filename": filename
+        "filename": filename,
+        "db_company_name": db_company_name,
+        "db_doc_type": db_doc_type,
+        "db_doc_year": db_doc_year
     }
 
 @app.post("/query/stream")
@@ -952,6 +958,9 @@ async def query_rag_stream(
     query_vector = ctx["query_vector"]
     cache_collection = ctx["cache_collection"]
     ctx_filename = ctx["filename"]
+    db_company_name = ctx["db_company_name"]
+    db_doc_type = ctx["db_doc_type"]
+    db_doc_year = ctx["db_doc_year"]
     # Truncate cache_query_key to 1000 chars (Milvus VARCHAR max is 1024)
     cache_query_key = f"Language: {language.value} | Query: {target_query}"[:1000]
     
@@ -991,24 +1000,30 @@ async def query_rag_stream(
                 
             new_text += text[last_idx:]
             
-            # Dynamically resolve company name, form type and year based on filename_val
-            comp_lower = filename_val.lower()
-            company_name = "New Oriental Education & Technology Group Inc."
-            doc_type = "Form 20-F"
-            year_str = "FY2025"
+            # Dynamically resolve company name, form type and year from database
+            company_name = db_company_name
+            doc_type = db_doc_type
+            year_str = db_doc_year
             
-            if "tencent" in comp_lower or "tcehy" in comp_lower:
-                company_name = "Tencent Holdings Limited"
-                doc_type = "Annual Report"
-                year_str = "FY2024"
-            elif "baba" in comp_lower or "alibaba" in comp_lower:
-                company_name = "Alibaba Group Holding Limited"
-                doc_type = "Form 20-F"
-                year_str = "FY2024"
-            elif "edu" in comp_lower:
+            # Smart fallback in case metadata was not populated (for old uploaded docs)
+            if not company_name:
+                comp_lower = filename_val.lower()
                 company_name = "New Oriental Education & Technology Group Inc."
                 doc_type = "Form 20-F"
                 year_str = "FY2025"
+                
+                if "tencent" in comp_lower or "tcehy" in comp_lower:
+                    company_name = "Tencent Holdings Limited"
+                    doc_type = "Annual Report"
+                    year_str = "FY2024"
+                elif "baba" in comp_lower or "alibaba" in comp_lower:
+                    company_name = "Alibaba Group Holding Limited"
+                    doc_type = "Form 20-F"
+                    year_str = "FY2024"
+                elif "edu" in comp_lower:
+                    company_name = "New Oriental Education & Technology Group Inc."
+                    doc_type = "Form 20-F"
+                    year_str = "FY2025"
             
             # Build bibliography section (strictly formatted academic references list)
             ref_list = []
