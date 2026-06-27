@@ -4,6 +4,7 @@ import logging
 import psycopg2
 import redis
 import boto3
+import pdfplumber
 
 
 from celery import Celery
@@ -111,7 +112,6 @@ def ingest_pdf_task(filename: str, doc_id: int):
     
     # 2. Extract structured elements using pdfplumber (Fast fallback)
     chunks_with_metadata = []
-    import pdfplumber
     try:
         logger.info(f"Parsing PDF layout-aware via pdfplumber: {filename}")
         with pdfplumber.open(local_path) as pdf:

@@ -2,12 +2,14 @@ import os
 import time
 import logging
 import psycopg2
+import psycopg2.pool
 import uvicorn
 import redis
 import json
 import asyncio
 import uuid
 import boto3
+from enum import Enum
 from typing import AsyncGenerator
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import StreamingResponse
@@ -37,6 +39,138 @@ MILVUS_PORT = os.environ.get("MILVUS_PORT", "19530")
 s3_endpoint = os.environ.get("S3_ENDPOINT_URL", "http://minio:9000")
 s3_key_id = os.environ.get("S3_ACCESS_KEY_ID", "minioadmin")
 s3_secret = os.environ.get("S3_SECRET_ACCESS_KEY", "minioadmin")
+
+# --- Input Validation Enums ---
+class AnalysisType(str, Enum):
+    comprehensive = "comprehensive"
+    compliance = "compliance"
+    quick = "quick"
+
+class Language(str, Enum):
+    en = "en"
+    zh_cn = "zh_cn"
+    zh_hk = "zh_hk"
+
+# --- Unified Report Templates (Single Source of Truth) ---
+REPORT_TEMPLATES = {
+    "comprehensive": {
+        "role": "Lead Equity Research Analyst",
+        "query": (
+            "Prepare an institutional-grade investment memorandum. Structure the report exactly as follows:\n"
+            "1. **EXECUTIVE SUMMARY & INVESTMENT THESIS**: State the investment rating (Buy/Hold/Sell) and the core qualitative justification.\n"
+            "2. **FINANCIAL PERFORMANCE & TREND AUDIT**: Analyze revenues, operational margins, and cash flow trends. Use markdown tables to compare fiscal years.\n"
+            "3. **KEY INVESTMENT RISKS & MITIGATION**: Graded analysis (High/Medium/Low impact) of regulatory, competitive, and operational risks.\n"
+            "4. **VALUATION & CAPITAL STRUCTURE AUDIT**: Analyze long-term investments, Level 3 asset valuations, and tax considerations (e.g., PFIC classification status).\n"
+            "5. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
+        ),
+        "struct": (
+            "You are a Lead Equity Research Analyst preparing an institutional-grade investment memorandum for executive leadership. "
+            "The report must be highly professional, avoiding generic filler, and structured exactly as follows:\n\n"
+            "1. **EXECUTIVE SUMMARY & INVESTMENT THESIS**: State the rating (Buy/Hold/Sell) and the core justification.\n"
+            "2. **FINANCIAL PERFORMANCE & TREND AUDIT**: Analyze revenues, margins, and cash flow trends. Use tables if appropriate.\n"
+            "3. **KEY INVESTMENT RISKS & MITIGATION**: Graded analysis of regulatory, competitive, and operational risks.\n"
+            "4. **VALUATION & CAPITAL STRUCTURE AUDIT**: Deep dive into long-term investments, Level 3 asset valuations, and tax considerations (e.g., PFIC status).\n"
+            "5. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
+        )
+    },
+    "compliance": {
+        "role": "Chief Compliance Officer",
+        "query": (
+            "Prepare a regulatory audit report. Structure the report exactly as follows:\n"
+            "1. **COMPLIANCE EXECUTIVE SUMMARY**: Overall compliance risk warning rating (High/Medium/Low Risk) and summary.\n"
+            "2. **LITIGATION & INTELLECTUAL PROPERTY AUDIT**: Detail any copyright disputes, historical judgements, damages paid, and policy gaps.\n"
+            "3. **REGULATORY POLICY & SHIFT IMPACTS**: Analyze the impact of regulatory changes on business operations and transformation.\n"
+            "4. **TAX COMPLIANCE & CROSS-BORDER DISCLOSURE**: Detail PFIC classification, tax tests, and implications for foreign investors.\n"
+            "5. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
+        ),
+        "struct": (
+            "You are a Chief Compliance Officer preparing a regulatory audit report. "
+            "The report must be highly professional, focusing strictly on risks and compliance framework, and structured exactly as follows:\n\n"
+            "1. **COMPLIANCE EXECUTIVE SUMMARY**: Overall compliance risk warning rating (High/Medium/Low Risk) and summary.\n"
+            "2. **LITIGATION & INTELLECTUAL PROPERTY AUDIT**: Detail any copyright disputes, historical judgements, damages paid, and policy gaps.\n"
+            "3. **REGULATORY POLICY & SHIFT IMPACTS**: Analyze the impact of regulatory changes on business operations and transformation.\n"
+            "4. **TAX COMPLIANCE & CROSS-BORDER DISCLOSURE**: Detail PFIC classification, tax tests, and implications for foreign investors.\n"
+            "5. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
+        )
+    },
+    "quick": {
+        "role": "Senior Investment Analyst",
+        "query": (
+            "Provide a high-speed brief for executive leadership (CEO/CFO). Structure the report exactly as follows:\n"
+            "1. **EXECUTIVE ACTIONS & RECOMMENDATIONS**: One-sentence core thesis.\n"
+            "2. **KEY FINANCIAL HIGHLIGHTS**: Bullet points of key revenue growth and margins.\n"
+            "3. **IMMINENT RISK ALERTS**: Two major risk issues that cannot be ignored.\n"
+            "4. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
+        ),
+        "struct": (
+            "You are a Senior Investment Analyst providing a high-speed brief for executive leadership (CEO/CFO). "
+            "The brief must be extremely concise, bulleted, and structured exactly as follows:\n\n"
+            "1. **EXECUTIVE ACTIONS & RECOMMENDATIONS**: One-sentence core rating and actionable recommendation.\n"
+            "2. **KEY FINANCIAL HIGHLIGHTS**: Bullet points of key revenue growth and margins.\n"
+            "3. **IMMINENT RISK ALERTS**: Two major risk issues that cannot be ignored.\n"
+            "4. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
+        )
+    }
+}
+
+# Generic sub-queries for multi-faceted retrieval (works for any SEC filing)
+GENERIC_SUB_QUERIES = [
+    "Core business operations, revenue segments, and year-over-year financial performance trends",
+    "Risk factors, pending litigation, intellectual property disputes, and regulatory compliance issues",
+    "PFIC status, tax classification tests, cross-border tax implications for foreign investors, capital structure and Level 3 fair value measurements"
+]
+
+LANG_MAP = {
+    "en": "English",
+    "zh_cn": "Simplified Chinese (简体中文)",
+    "zh_hk": "Traditional Chinese (繁體中文)"
+}
+
+def build_citation_instruction(filename: str) -> str:
+    """Generates a generic citation format instruction based on the uploaded filename."""
+    return (
+        f"- Format every citation in the 'Citations / References' section exactly as: "
+        f"[Footnote Number] Source: {filename}, at Page [Number] "
+        f"(where [Number] MUST be one of the actual page numbers from the retrieved context below)."
+    )
+
+def build_final_prompt(target_query: str, struct_instructions: str, retrieved_context: str, target_lang: str, filename: str) -> str:
+    """Builds the final LLM prompt with citation constraints."""
+    language_instruction = (
+        f"IMPORTANT: The user has selected {target_lang} as their preferred language. "
+        f"You MUST generate the entire report in {target_lang}. Use professional financial terminology."
+    )
+    citation_instruction = build_citation_instruction(filename)
+    return (
+        f"{language_instruction}\n\n"
+        f"{target_query}\n\n"
+        f"IMPORTANT PROFESSIONAL FINANCIAL REPORTING INSTRUCTIONS:\n"
+        f"{struct_instructions}\n\n"
+        f"STRICT CITATION CONSTRAINTS (CRITICAL FOR FAITHFULNESS):\n"
+        f"- You MUST ONLY use the facts, figures, and page numbers present in the [RETRIEVED DATA] block below. Do NOT use your pre-trained memory or make up page numbers.\n"
+        f"- DO NOT introduce any external regulatory codes, tax form numbers, or specific tax rates UNLESS they are explicitly written in the [RETRIEVED DATA] below.\n"
+        f"- For every financial figure, percentage, rate, date, or specific claim, you MUST append a sequential superscript footnote indicator (e.g., <sup>1</sup>, <sup>2</sup>).\n"
+        f"{citation_instruction}\n\n"
+        f"[RETRIEVED DATA FROM SEC FILING]:\n{retrieved_context}"
+    )
+
+def build_audit_prompt(draft: str, retrieved_context: str, target_lang: str, filename: str) -> str:
+    """Builds the audit prompt for the second-pass LLM review."""
+    citation_instruction = build_citation_instruction(filename)
+    return (
+        f"You are a Senior Financial Audit Agent. Review the following draft report against the original source context. "
+        f"Ensure that all dates, financial numbers, margins, and page references match the source exactly. "
+        f"Correct any misstatements or formatting gaps.\n\n"
+        f"IMPORTANT CITATION AUDIT:\n"
+        f"1. Make sure every single number, percentage, and date has a superscript footnote indicator.\n"
+        f"2. Validate that NO page numbers other than those in the retrieved context are cited. Correct any hallucinated page numbers.\n"
+        f"3. Strip out any external tax forms, tax rates, or law details that are not explicitly present in the retrieved context to maintain 100% faithfulness.\n"
+        f"4. Ensure the 'Citations / References' section at the end is present, sequential, and formatted correctly.\n"
+        f"{citation_instruction}\n\n"
+        f"Output the final polished report in {target_lang}.\n\n"
+        f"[SOURCE CONTEXT]:\n{retrieved_context}\n\n"
+        f"[DRAFT REPORT]:\n{draft}"
+    )
 
 app = FastAPI()
 client = genai.Client(api_key=API_KEY)
@@ -119,13 +253,35 @@ async def stream_deepseek(prompt: str, model: str = "deepseek-chat") -> AsyncGen
                     except json.JSONDecodeError:
                         continue
 
-# Connect to Redis
+# --- Infrastructure Connections (initialized at startup) ---
 redis_client = None
-try:
-    redis_client = redis.from_url(REDIS_URL, socket_connect_timeout=2)
-    logger.info("Connected to Redis successfully.")
-except Exception as e:
-    logger.error(f"Failed to connect to Redis: {e}")
+db_pool = None
+
+@app.on_event("startup")
+def startup_init():
+    """Initialize all infrastructure connections once at startup."""
+    global redis_client, db_pool
+    # Redis
+    try:
+        redis_client = redis.from_url(REDIS_URL, socket_connect_timeout=5)
+        redis_client.ping()
+        logger.info("Connected to Redis successfully.")
+    except Exception as e:
+        logger.error(f"Failed to connect to Redis: {e}")
+    
+    # PostgreSQL connection pool
+    try:
+        db_pool = psycopg2.pool.ThreadedConnectionPool(minconn=2, maxconn=10, dsn=DATABASE_URL)
+        logger.info("PostgreSQL connection pool initialized (2-10 connections).")
+    except Exception as e:
+        logger.error(f"Failed to initialize PostgreSQL pool: {e}")
+    
+    # Milvus
+    try:
+        connections.connect("default", host=MILVUS_HOST, port=MILVUS_PORT)
+        logger.info("Connected to Milvus successfully.")
+    except Exception as e:
+        logger.error(f"Failed to connect to Milvus: {e}")
 
 # S3 Client Helper
 def get_s3_client():
@@ -138,6 +294,13 @@ def get_s3_client():
 
 # --- 1. Database Connection Helpers ---
 def get_db_connection():
+    """Get a connection from the pool, falling back to direct connect."""
+    if db_pool:
+        try:
+            return db_pool.getconn()
+        except Exception:
+            pass
+    # Fallback: direct connection with retries
     retries = 5
     while retries > 0:
         try:
@@ -149,9 +312,24 @@ def get_db_connection():
             time.sleep(3)
     raise Exception("Could not connect to the database after several retries.")
 
+def return_db_connection(conn):
+    """Return a connection to the pool."""
+    if db_pool:
+        try:
+            db_pool.putconn(conn)
+            return
+        except Exception:
+            pass
+    conn.close()
+
 # --- 2. Milvus Connections ---
 def get_milvus_connection():
-    connections.connect("default", host=MILVUS_HOST, port=MILVUS_PORT)
+    """Ensure Milvus connection is alive (reconnects if needed)."""
+    try:
+        if not connections.has_connection("default"):
+            connections.connect("default", host=MILVUS_HOST, port=MILVUS_PORT)
+    except Exception:
+        connections.connect("default", host=MILVUS_HOST, port=MILVUS_PORT)
 
 def init_cache_collection():
     """Initializes the collection used for the semantic cache"""
@@ -305,8 +483,8 @@ async def ingest_document(file: UploadFile = File(...)):
 @app.post("/query")
 async def query_rag(
     filename: str = Form(...),
-    analysis_type: str = Form(...),
-    language: str = Form(...)
+    analysis_type: AnalysisType = Form(...),
+    language: Language = Form(...)
 ):
     if not API_KEY:
         raise HTTPException(status_code=500, detail="Gemini API Key missing on Engine")
@@ -314,33 +492,9 @@ async def query_rag(
     start_time = time.time()
     cache_uuid = None
     
-    # 1. Redis Semantic Cache (Cosine > 0.95 in Milvus cache index)
-    query_text_map = {
-        "comprehensive": (
-            "You are a Lead Equity Research Analyst preparing an institutional-grade investment memorandum. Structure the report exactly as follows:\n"
-            "1. **EXECUTIVE SUMMARY & INVESTMENT THESIS**: State the investment rating (Buy/Hold/Sell) and the core qualitative justification.\n"
-            "2. **FINANCIAL PERFORMANCE & TREND AUDIT**: Analyze revenues, operational margins, and cash flow trends. Use markdown tables to compare fiscal years.\n"
-            "3. **KEY INVESTMENT RISKS & MITIGATION**: Graded analysis (High/Medium/Low impact) of regulatory, competitive, and operational risks.\n"
-            "4. **VALUATION & CAPITAL STRUCTURE AUDIT**: Analyze long-term investments, Level 3 asset valuations, and tax considerations (e.g., PFIC classification status).\n"
-            "5. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
-        ),
-        "compliance": (
-            "You are a Chief Compliance Officer preparing a regulatory audit report. Structure the report exactly as follows:\n"
-            "1. **COMPLIANCE EXECUTIVE SUMMARY**: Overall compliance risk warning rating (High/Medium/Low Risk) and summary.\n"
-            "2. **LITIGATION & INTELLECTUAL PROPERTY AUDIT**: Detail copyright disputes, historical judgements (e.g. GMAC/ETS case), damages paid, and policy gaps.\n"
-            "3. **REGULATORY POLICY & SHIFT IMPACTS**: Analyze the impact of private education regulation changes on business transformation.\n"
-            "4. **TAX COMPLIANCE & PFIC STATUS DISCLOSURE**: Detail the PFIC classification, tests (asset/income tests), and IRS implications for US investors.\n"
-            "5. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
-        ),
-        "quick": (
-            "You are a Senior Investment Analyst providing a high-speed brief for executive leadership (CEO/CFO). Structure the report exactly as follows:\n"
-            "1. **EXECUTIVE ACTIONS & RECOMMENDATIONS**: One-sentence core thesis.\n"
-            "2. **KEY FINANCIAL HIGHLIGHTS**: Bullet points of key revenue growth and margins.\n"
-            "3. **IMMINENT RISK ALERTS**: Two major risk issues that cannot be ignored.\n"
-            "4. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
-        )
-    }
-    target_query = query_text_map.get(analysis_type, "Analyze this report")
+    # 1. Redis Semantic Cache (Cosine > 0.97 in Milvus cache index)
+    template = REPORT_TEMPLATES[analysis_type.value]
+    target_query = template["query"]
     
     # Embed the query to check cache
     try:
@@ -370,7 +524,7 @@ async def query_rag(
         similarity = match.distance
         matched_key = match.entity.get("cache_key")
         
-        # We enforce a high semantic similarity (e.g. Cosine > 0.98)
+        # Enforce high semantic similarity threshold (Cosine >= 0.97)
         if similarity >= 0.97 and redis_client:
             try:
                 cached_data = redis_client.get(matched_key)
@@ -406,21 +560,16 @@ async def query_rag(
         "zh_cn": "Simplified Chinese (简体中文)",
         "zh_hk": "Traditional Chinese (繁體中文)"
     }
-    target_lang = lang_map.get(language, "English")
-    logger.info(f"Router directed query: {analysis_type} | Language: {target_lang}")
+    target_lang = LANG_MAP.get(language.value, "English")
+    logger.info(f"Router directed query: {analysis_type.value} | Language: {target_lang}")
 
     # Node 2: Retriever Node (Milvus Parent-Child Search with Query Decomposition)
     logger.info("LangGraph [Retriever Node] executing parent-child similarity search...")
     get_milvus_connection()
     collection = Collection("stock_analysis_chunks")
     
-    # Decompose query into sub-queries to ensure all facets are covered
-    sub_queries = [
-        target_query,
-        "新东方核心教育业务转型与营收业绩表现 东方甄选直播电商与与辉同行剥离",
-        "新东方历史知识产权纠纷 ETS GMAC 侵权诉讼判决与合规政策漏洞",
-        "新东方 PFIC 被动外国投资公司状态 资产测试 收入测试 美国投资者税务影响 长期投资公允价值变动 Level 3 资产减值"
-    ]
+    # Generic sub-queries that work for any SEC filing
+    sub_queries = [target_query] + GENERIC_SUB_QUERIES
     
     # Parallel sub-query embedding via asyncio
     async def embed_single(sq: str):
@@ -481,53 +630,10 @@ async def query_rag(
             "text": f"Page {page}: " + parent_txt[:200].strip() + "..."
         })
 
-    # Node 3: Generator & Auditor Agent (Model Cascade: Flash -> Pro)
+    # Node 3: Generator & Auditor Agent (Model Cascade)
     logger.info("LangGraph [Auditor & Generator Node] executing Model Cascade...")
-    language_instruction = (
-        f"IMPORTANT: The user has selected {target_lang} as their preferred language. "
-        f"You MUST generate the entire report in {target_lang}. Use professional financial terminology."
-    )
-    
-    struct_instructions = ""
-    if analysis_type == "comprehensive":
-        struct_instructions = (
-            "You are a Lead Equity Research Analyst preparing an institutional-grade investment memorandum for executive leadership. The report must be highly professional, avoiding generic filler, and structured exactly as follows:\n\n"
-            "1. **EXECUTIVE SUMMARY & INVESTMENT THESIS**: State the rating (Buy/Hold/Sell) and the core justification.\n"
-            "2. **FINANCIAL PERFORMANCE & TREND AUDIT**: Analyze revenues, margins, and cash flow trends. Use tables if appropriate.\n"
-            "3. **KEY INVESTMENT RISKS & MITIGATION**: Graded analysis of regulatory, competitive, and operational risks.\n"
-            "4. **VALUATION & CAPITAL STRUCTURE AUDIT**: Deep dive into long-term investments, Level 3 asset valuations, and tax considerations (e.g., PFIC status).\n"
-            "5. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
-        )
-    elif analysis_type == "compliance":
-        struct_instructions = (
-            "You are a Chief Compliance Officer preparing a regulatory audit report. The report must be highly professional, focusing strictly on risks and compliance framework, and structured exactly as follows:\n\n"
-            "1. **COMPLIANCE EXECUTIVE SUMMARY**: Overall compliance risk warning rating (High/Medium/Low Risk) and summary.\n"
-            "2. **LITIGATION & INTELLECTUAL PROPERTY AUDIT**: Detail copyright disputes, historical judgements (e.g. GMAC/ETS case), damages paid, and policy gaps.\n"
-            "3. **REGULATORY POLICY & SHIFT IMPACTS**: Analyze the impact of private education regulation changes on business transformation.\n"
-            "4. **TAX COMPLIANCE & PFIC STATUS DISCLOSURE**: Detail the PFIC classification, tests (asset/income tests), and IRS implications for US investors.\n"
-            "5. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
-        )
-    elif analysis_type == "quick":
-        struct_instructions = (
-            "You are a Senior Investment Analyst providing a high-speed brief for executive leadership (CEO/CFO). The brief must be extremely concise, bulleted, and structured exactly as follows:\n\n"
-            "1. **EXECUTIVE ACTIONS & RECOMMENDATIONS**: One-sentence core rating and actionable recommendation.\n"
-            "2. **KEY FINANCIAL HIGHLIGHTS**: Bullet points of key revenue growth and margins.\n"
-            "3. **IMMINENT RISK ALERTS**: Two major risk issues that cannot be ignored.\n"
-            "4. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
-        )
-
-    final_prompt = (
-        f"{language_instruction}\n\n"
-        f"{target_query}\n\n"
-        f"IMPORTANT PROFESSIONAL FINANCIAL REPORTING INSTRUCTIONS:\n"
-        f"{struct_instructions}\n\n"
-        f"STRICT CITATION CONSTRAINTS (CRITICAL FOR FAITHFULNESS):\n"
-        f"- You MUST ONLY use the facts, figures, and page numbers present in the [RETRIEVED DATA] block below. Do NOT use your pre-trained memory or make up page numbers (like Page 33, 67, etc.) that are not in the [RETRIEVED DATA] below.\n"
-        f"- DO NOT introduce any external regulatory codes, custom legal formulas, tax form numbers (like IRS Form 8621), or specific tax rates UNLESS they are explicitly written in the [RETRIEVED DATA] below. If they are not in the text, you must not include them.\n"
-        f"- For every financial figure, percentage, rate, date, or specific claim, you MUST append a sequential superscript footnote indicator (e.g., <sup>1</sup>, <sup>2</sup>).\n"
-        f"- Format every citation in the 'Citations / References' section exactly as: [Footnote Number] New Oriental Education & Technology Group Inc., Annual Report (Form 20-F) for the Fiscal Year Ended May 31, 2025, at Page [Number] (where [Number] MUST be one of the actual page numbers from the retrieved context below).\n\n"
-        f"[RETRIEVED DATA FROM SEC 10-K FILING]:\n{retrieved_context}"
-    )
+    struct_instructions = template["struct"]
+    final_prompt = build_final_prompt(target_query, struct_instructions, retrieved_context, target_lang, filename)
 
     # Initial Draft by DeepSeek (deepseek-chat) with Gemini fallback
     draft_result = None
@@ -558,24 +664,11 @@ async def query_rag(
         draft_result = response.text
     
     # Audit & Final Polish — SKIP for quick mode (saves ~15s)
-    if analysis_type == "quick":
+    if analysis_type == AnalysisType.quick:
         logger.info("Quick mode: skipping audit stage for faster output.")
         final_report = draft_result
     else:
-        audit_prompt = (
-            f"You are a Senior Financial Audit Agent. Review the following draft report against the original source context. "
-            f"Ensure that all dates, financial numbers, margins, and page references match the source exactly. "
-            f"Correct any misstatements or formatting gaps.\n\n"
-            f"IMPORTANT CITATION AUDIT:\n"
-            f"1. Make sure every single number, percentage, and date has a superscript footnote indicator (e.g., <sup>1</sup>, <sup>2</sup>).\n"
-            f"2. Validate that NO page numbers other than those in the retrieved context are cited. Correct any hallucinated page numbers.\n"
-            f"3. Strip out any external tax forms (such as IRS Form 8621), tax rates, or law details that are not explicitly present in the retrieved context to maintain 100% faithfulness.\n"
-            f"4. Ensure the 'Citations / References' section at the end is present, sequential, and formatted exactly as:\n"
-            f"   [Footnote Number] New Oriental Education & Technology Group Inc., Annual Report (Form 20-F) for the Fiscal Year Ended May 31, 2025, at Page [Number].\n\n"
-            f"Output the final polished report in {target_lang}.\n\n"
-            f"[SOURCE CONTEXT]:\n{retrieved_context}\n\n"
-            f"[DRAFT REPORT]:\n{draft_result}"
-        )
+        audit_prompt = build_audit_prompt(draft_result, retrieved_context, target_lang, filename)
         
         final_report = None
         if DEEPSEEK_API_KEY:
@@ -633,33 +726,12 @@ async def query_rag(
 # --- Streaming SSE Endpoint ---
 
 async def _build_rag_context(filename: str, analysis_type: str, language: str):
-    """Shared helper: retrieves context, builds prompts. Returns (final_prompt, audit_prompt_template, citations, retrieved_context, target_query, target_lang, query_vector, cache_collection)"""
-    query_text_map = {
-        "comprehensive": (
-            "You are a Lead Equity Research Analyst preparing an institutional-grade investment memorandum. Structure the report exactly as follows:\n"
-            "1. **EXECUTIVE SUMMARY & INVESTMENT THESIS**: State the investment rating (Buy/Hold/Sell) and the core qualitative justification.\n"
-            "2. **FINANCIAL PERFORMANCE & TREND AUDIT**: Analyze revenues, operational margins, and cash flow trends. Use markdown tables to compare fiscal years.\n"
-            "3. **KEY INVESTMENT RISKS & MITIGATION**: Graded analysis (High/Medium/Low impact) of regulatory, competitive, and operational risks.\n"
-            "4. **VALUATION & CAPITAL STRUCTURE AUDIT**: Analyze long-term investments, Level 3 asset valuations, and tax considerations (e.g., PFIC classification status).\n"
-            "5. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
-        ),
-        "compliance": (
-            "You are a Chief Compliance Officer preparing a regulatory audit report. Structure the report exactly as follows:\n"
-            "1. **COMPLIANCE EXECUTIVE SUMMARY**: Overall compliance risk warning rating (High/Medium/Low Risk) and summary.\n"
-            "2. **LITIGATION & INTELLECTUAL PROPERTY AUDIT**: Detail copyright disputes, historical judgements (e.g. GMAC/ETS case), damages paid, and policy gaps.\n"
-            "3. **REGULATORY POLICY & SHIFT IMPACTS**: Analyze the impact of private education regulation changes on business transformation.\n"
-            "4. **TAX COMPLIANCE & PFIC STATUS DISCLOSURE**: Detail the PFIC classification, tests (asset/income tests), and IRS implications for US investors.\n"
-            "5. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
-        ),
-        "quick": (
-            "You are a Senior Investment Analyst providing a high-speed brief for executive leadership (CEO/CFO). Structure the report exactly as follows:\n"
-            "1. **EXECUTIVE ACTIONS & RECOMMENDATIONS**: One-sentence core thesis.\n"
-            "2. **KEY FINANCIAL HIGHLIGHTS**: Bullet points of key revenue growth and margins.\n"
-            "3. **IMMINENT RISK ALERTS**: Two major risk issues that cannot be ignored.\n"
-            "4. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
-        )
-    }
-    target_query = query_text_map.get(analysis_type, "Analyze this report")
+    """Shared helper: retrieves context, builds prompts using REPORT_TEMPLATES.
+    Returns dict with prompt data, or None if cache hit."""
+    template = REPORT_TEMPLATES.get(analysis_type)
+    if not template:
+        raise HTTPException(status_code=400, detail=f"Invalid analysis_type: {analysis_type}")
+    target_query = template["query"]
     
     # Embed query
     emb_query_res = client.models.embed_content(
@@ -694,20 +766,14 @@ async def _build_rag_context(filename: str, analysis_type: str, language: str):
         doc_id = row[0]
     finally:
         cur.close()
-        conn.close()
+        return_db_connection(conn)
     
-    lang_map = {"en": "English", "zh_cn": "Simplified Chinese (简体中文)", "zh_hk": "Traditional Chinese (繁體中文)"}
-    target_lang = lang_map.get(language, "English")
+    target_lang = LANG_MAP.get(language, "English")
     
-    # Parallel retrieval
+    # Parallel retrieval using generic sub-queries
     get_milvus_connection()
     collection = Collection("stock_analysis_chunks")
-    sub_queries = [
-        target_query,
-        "新东方核心教育业务转型与营收业绩表现 东方甄选直播电商与与辉同行剥离",
-        "新东方历史知识产权纠纷 ETS GMAC 侵权诉讼判决与合规政策漏洞",
-        "新东方 PFIC 被动外国投资公司状态 资产测试 收入测试 美国投资者税务影响 长期投资公允价值变动 Level 3 资产减值"
-    ]
+    sub_queries = [target_query] + GENERIC_SUB_QUERIES
     
     async def embed_single(sq):
         try:
@@ -749,26 +815,9 @@ async def _build_rag_context(filename: str, analysis_type: str, language: str):
         retrieved_context += f"\n--- [Page {page}] ---\n{parent_txt}\n"
         citations.append({"chunk_index": page, "text": f"Page {page}: " + parent_txt[:200].strip() + "..."})
     
-    # Build prompts
-    language_instruction = f"IMPORTANT: The user has selected {target_lang} as their preferred language. You MUST generate the entire report in {target_lang}. Use professional financial terminology."
-    
-    struct_map = {
-        "comprehensive": "You are a Lead Equity Research Analyst preparing an institutional-grade investment memorandum for executive leadership. The report must be highly professional, avoiding generic filler, and structured exactly as follows:\n\n1. **EXECUTIVE SUMMARY & INVESTMENT THESIS**: State the rating (Buy/Hold/Sell) and the core justification.\n2. **FINANCIAL PERFORMANCE & TREND AUDIT**: Analyze revenues, margins, and cash flow trends. Use tables if appropriate.\n3. **KEY INVESTMENT RISKS & MITIGATION**: Graded analysis of regulatory, competitive, and operational risks.\n4. **VALUATION & CAPITAL STRUCTURE AUDIT**: Deep dive into long-term investments, Level 3 asset valuations, and tax considerations (e.g., PFIC status).\n5. **CITATIONS / REFERENCES**: List all footnote citations sequentially.",
-        "compliance": "You are a Chief Compliance Officer preparing a regulatory audit report. The report must be highly professional, focusing strictly on risks and compliance framework, and structured exactly as follows:\n\n1. **COMPLIANCE EXECUTIVE SUMMARY**: Overall compliance risk warning rating (High/Medium/Low Risk) and summary.\n2. **LITIGATION & INTELLECTUAL PROPERTY AUDIT**: Detail copyright disputes, historical judgements (e.g. GMAC/ETS case), damages paid, and policy gaps.\n3. **REGULATORY POLICY & SHIFT IMPACTS**: Analyze the impact of private education regulation changes on business transformation.\n4. **TAX COMPLIANCE & PFIC STATUS DISCLOSURE**: Detail the PFIC classification, tests (asset/income tests), and IRS implications for US investors.\n5. **CITATIONS / REFERENCES**: List all footnote citations sequentially.",
-        "quick": "You are a Senior Investment Analyst providing a high-speed brief for executive leadership (CEO/CFO). The brief must be extremely concise, bulleted, and structured exactly as follows:\n\n1. **EXECUTIVE ACTIONS & RECOMMENDATIONS**: One-sentence core rating and actionable recommendation.\n2. **KEY FINANCIAL HIGHLIGHTS**: Bullet points of key revenue growth and margins.\n3. **IMMINENT RISK ALERTS**: Two major risk issues that cannot be ignored.\n4. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
-    }
-    struct_instructions = struct_map.get(analysis_type, "")
-    
-    final_prompt = (
-        f"{language_instruction}\n\n{target_query}\n\n"
-        f"IMPORTANT PROFESSIONAL FINANCIAL REPORTING INSTRUCTIONS:\n{struct_instructions}\n\n"
-        f"STRICT CITATION CONSTRAINTS (CRITICAL FOR FAITHFULNESS):\n"
-        f"- You MUST ONLY use the facts, figures, and page numbers present in the [RETRIEVED DATA] block below.\n"
-        f"- DO NOT introduce any external regulatory codes, tax form numbers, or specific tax rates UNLESS they are explicitly written in the [RETRIEVED DATA] below.\n"
-        f"- For every financial figure, percentage, rate, date, or specific claim, you MUST append a sequential superscript footnote indicator.\n"
-        f"- Format every citation exactly as: [Footnote Number] New Oriental Education & Technology Group Inc., Annual Report (Form 20-F) for the Fiscal Year Ended May 31, 2025, at Page [Number].\n\n"
-        f"[RETRIEVED DATA FROM SEC 10-K FILING]:\n{retrieved_context}"
-    )
+    # Build prompts using shared helpers
+    struct_instructions = template["struct"]
+    final_prompt = build_final_prompt(target_query, struct_instructions, retrieved_context, target_lang, filename)
     
     return {
         "final_prompt": final_prompt,
@@ -778,21 +827,22 @@ async def _build_rag_context(filename: str, analysis_type: str, language: str):
         "target_lang": target_lang,
         "query_vector": query_vector,
         "cache_collection": cache_collection,
-        "analysis_type": analysis_type
+        "analysis_type": analysis_type,
+        "filename": filename
     }
 
 @app.post("/query/stream")
 async def query_rag_stream(
     filename: str = Form(...),
-    analysis_type: str = Form(...),
-    language: str = Form(...)
+    analysis_type: AnalysisType = Form(...),
+    language: Language = Form(...)
 ):
     """Streaming SSE endpoint — tokens are pushed to client as they are generated"""
     if not DEEPSEEK_API_KEY:
         raise HTTPException(status_code=500, detail="Streaming requires DeepSeek API Key")
     
     start_time = time.time()
-    ctx = await _build_rag_context(filename, analysis_type, language)
+    ctx = await _build_rag_context(filename, analysis_type.value, language.value)
     
     if ctx is None:
         # Cache hit — not streamable, redirect to regular endpoint
@@ -805,11 +855,12 @@ async def query_rag_stream(
     target_lang = ctx["target_lang"]
     query_vector = ctx["query_vector"]
     cache_collection = ctx["cache_collection"]
+    ctx_filename = ctx["filename"]
     
     async def sse_generator() -> AsyncGenerator[str, None]:
         full_text = ""
         
-        if analysis_type == "quick":
+        if analysis_type == AnalysisType.quick:
             # Quick mode: stream draft directly, no audit
             logger.info("[Stream] Quick mode: streaming draft directly...")
             async for chunk in stream_deepseek(final_prompt):
@@ -827,19 +878,7 @@ async def query_rag_stream(
             # Audit stage: stream the polished version
             yield f"data: {json.dumps({'type': 'stage', 'content': 'audit'})}\n\n"
             logger.info("[Stream] Streaming audit & polish...")
-            audit_prompt = (
-                f"You are a Senior Financial Audit Agent. Review the following draft report against the original source context. "
-                f"Ensure that all dates, financial numbers, margins, and page references match the source exactly. "
-                f"Correct any misstatements or formatting gaps.\n\n"
-                f"IMPORTANT CITATION AUDIT:\n"
-                f"1. Make sure every number, percentage, and date has a superscript footnote.\n"
-                f"2. Validate that NO page numbers other than those in the retrieved context are cited.\n"
-                f"3. Strip out any external tax forms or law details not in the retrieved context.\n"
-                f"4. Ensure the 'Citations / References' section is present and sequential.\n\n"
-                f"Output the final polished report in {target_lang}.\n\n"
-                f"[SOURCE CONTEXT]:\n{retrieved_context}\n\n"
-                f"[DRAFT REPORT]:\n{draft_text}"
-            )
+            audit_prompt = build_audit_prompt(draft_text, retrieved_context, target_lang, ctx_filename)
             async for chunk in stream_deepseek(audit_prompt):
                 full_text += chunk
                 yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
@@ -847,9 +886,8 @@ async def query_rag_stream(
         # Cache the final result
         if not full_text:
             full_text = draft_text if 'draft_text' in dir() else ""
-        final_text = full_text
         output_data = {
-            "analysis": final_text,
+            "analysis": full_text,
             "citations": citations,
             "retrieved_context": retrieved_context,
             "cache_hit": False,
@@ -872,3 +910,4 @@ async def query_rag_stream(
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8001)
+

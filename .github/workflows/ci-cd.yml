@@ -13,7 +13,7 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Create Dummy environment file
         run: |
@@ -36,6 +36,7 @@ jobs:
 
       - name: Run Pytest in Engine Container
         run: |
+          docker-compose exec -T engine pip install -r requirements-dev.txt
           docker-compose exec -T engine pytest test_main.py -v
 
       - name: Run Ragas Quality Evaluation
@@ -60,7 +61,7 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Deploy to Remote Server via SSH
         uses: appleboy/ssh-action@master

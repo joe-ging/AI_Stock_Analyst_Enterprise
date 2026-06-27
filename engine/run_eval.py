@@ -39,6 +39,15 @@ def call_llm(prompt: str) -> str:
         return response.text
     raise ValueError("No active LLM client found.")
 
+def parse_llm_json(raw: str) -> dict:
+    """Extract and parse JSON from LLM response, handling markdown code fences."""
+    raw = raw.strip()
+    if "```json" in raw:
+        raw = raw.split("```json")[1].split("```")[0].strip()
+    elif "```" in raw:
+        raw = raw.split("```")[1].split("```")[0].strip()
+    return json.loads(raw)
+
 def evaluate_faithfulness(context: str, answer: str) -> float:
     """Ragas Metric: Faithfulness (Is the answer supported strictly by the context?)"""
     prompt = (
@@ -52,15 +61,11 @@ def evaluate_faithfulness(context: str, answer: str) -> float:
     )
     try:
         res = call_llm(prompt).strip()
-        if "```json" in res:
-            res = res.split("```json")[1].split("```")[0].strip()
-        elif "```" in res:
-            res = res.split("```")[1].split("```")[0].strip()
-        data = json.loads(res)
+        data = parse_llm_json(res)
         return float(data["supported_statements"]) / float(data["total_statements"]) if data["total_statements"] > 0 else 1.0
     except Exception as e:
         print(f"Error calculating faithfulness: {e}")
-        return 0.85 # Fail-safe average
+        return 0.0  # Fail-visible: score 0 on error
 
 def evaluate_context_precision(question: str, context: str) -> float:
     """Ragas Metric: Context Precision (Is the retrieved context relevant to the question?)"""
@@ -75,15 +80,11 @@ def evaluate_context_precision(question: str, context: str) -> float:
     )
     try:
         res = call_llm(prompt).strip()
-        if "```json" in res:
-            res = res.split("```json")[1].split("```")[0].strip()
-        elif "```" in res:
-            res = res.split("```")[1].split("```")[0].strip()
-        data = json.loads(res)
+        data = parse_llm_json(res)
         return float(data["precision"])
     except Exception as e:
         print(f"Error calculating context precision: {e}")
-        return 0.80
+        return 0.0  # Fail-visible: score 0 on error
 
 def evaluate_answer_relevance(question: str, answer: str) -> float:
     """Ragas Metric: Answer Relevance (Does the answer address the question?)"""
@@ -97,15 +98,11 @@ def evaluate_answer_relevance(question: str, answer: str) -> float:
     )
     try:
         res = call_llm(prompt).strip()
-        if "```json" in res:
-            res = res.split("```json")[1].split("```")[0].strip()
-        elif "```" in res:
-            res = res.split("```")[1].split("```")[0].strip()
-        data = json.loads(res)
+        data = parse_llm_json(res)
         return float(data["relevance"])
     except Exception as e:
         print(f"Error calculating answer relevance: {e}")
-        return 0.90
+        return 0.0  # Fail-visible: score 0 on error
 
 def main():
     print("=== Starting RAG Ragas Evaluation Suite ===")
