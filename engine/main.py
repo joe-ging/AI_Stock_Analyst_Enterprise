@@ -10,9 +10,11 @@ import asyncio
 import uuid
 import boto3
 from enum import Enum
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional, List, Dict
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from prometheus_fastapi_instrumentator import Instrumentator
 import httpx
 from google import genai
 from google.genai import types
@@ -226,6 +228,17 @@ def build_audit_prompt(draft: str, retrieved_context: str, target_lang: str, fil
 client = genai.Client(api_key=API_KEY) if API_KEY else None
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Instrument the FastAPI app for Prometheus monitoring metrics
+Instrumentator().instrument(app).expose(app)
 
 def call_deepseek(prompt: str, model: str = "deepseek-chat") -> str:
     """Synchronous DeepSeek call (kept for backward compat with tests/eval)"""

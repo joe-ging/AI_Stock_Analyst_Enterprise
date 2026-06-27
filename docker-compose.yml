@@ -172,3 +172,27 @@ volumes:
   etcd_data:
   minio_data:
   milvus_data:
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: enterprise-rag-prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    ports:
+      - "9090:9090"
+    restart: always
+    depends_on:
+      - engine
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: enterprise-rag-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    restart: always
+    depends_on:
+      - prometheus

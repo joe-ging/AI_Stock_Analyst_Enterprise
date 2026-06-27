@@ -102,15 +102,6 @@ Microservices constantly monitor API health. If the primary `DeepSeek-Chat` endp
 Due to Gemini API's strict regional blocking in Hong Kong, the initial architecture relied on a brittle SOCKS5 proxy tunnel routing all LLM requests through an AWS Sydney EC2 instance. This drastically increased latency.
 - **Solution:** The stateless `engine` and `gateway` containers were permanently migrated to an AWS Sydney environment, natively bypassing regional API blocks and eliminating the proxy layer overhead, reducing API latency by over **50%**.
 
-### Disaster Recovery (Pilot Light IaC) & Chaos Engineering
-To guarantee enterprise-grade resilience while minimizing Total Cost of Ownership (TCO), we implemented a **Pilot Light** disaster recovery strategy managed by Infrastructure as Code (IaC).
-- **RPO (Recovery Point Objective) < 15 mins**: All stateful data (PostgreSQL, Milvus) is continuously backed up via asynchronous cross-region snapshots to a cold S3 bucket.
-- **RTO (Recovery Time Objective) < 10 mins**: If the primary environment suffers a catastrophic failure, our pre-configured `terraform` blueprint is executed to instantly provision a fresh AWS EC2 cluster, pull docker images, and restore state.
-
-To prevent "Configuration Drift" in this DR strategy, we implemented automated Chaos Engineering drills:
-- **Weekly Fire Drills**: A GitHub Actions workflow (`dr_game_day.yml`) runs every Sunday at 3:00 AM. It automatically SSHs into our AWS Sydney Standby server, spins up the entire Docker cluster from scratch, and runs the Ragas end-to-end evaluation.
-- **Validating API Agnosticism**: If Gemini or DeepSeek stealth-bans the Sydney IP range, our Sunday drill will immediately fail, alerting the SRE team before a real disaster strikes. Once the drill passes, the standby cluster is torn down to minimize cloud compute costs.
-
 ---
 
 ## 🔹 4. Database Architecture (Optimization & Synergies)
@@ -174,16 +165,26 @@ graph TD
 
 ---
 
-## 🔹 6. DevOps & Zero-Downtime Delivery
+## 🔹 6. DevOps, Observability & Disaster Recovery
 
 The system runs on a containerized environment deployed via automated CI/CD pipelines.
 
-- **GitOps & Automated Deployment**: 
-  1. Developers `git push` to the `main` branch.
-  2. **GitHub Actions** automatically trigger `pytest` integration tests to validate RAG retrieval logic.
-  3. Upon success, the pipeline builds the Docker images and pushes them to the **Tencent Container Registry (TCR)** or Docker Hub.
-  4. The remote server automatically pulls the latest images and executes the deployment script.
-- **Zero-Downtime Hot Reloads**: The custom `deploy.sh` script applies rolling updates specifically to stateless containers (`gateway`, `engine`), intentionally preserving stateful volumes (`postgres`, `milvus`, `redis`) to prevent enterprise data corruption.
+### GitOps & Zero-Downtime Hot Reloads
+- **Automated Deployment**: `git push` triggers GitHub Actions which runs `pytest` integration tests. Upon success, Docker images are built and pushed to the Container Registry. The remote server automatically pulls images and executes the deployment.
+- **Zero-Downtime Rolling Updates**: The custom `deploy.sh` script applies rolling updates specifically to stateless containers (`gateway`, `engine`), intentionally preserving stateful volumes (`postgres`, `milvus`, `redis`) to prevent enterprise data corruption.
+
+### AIOps & Full-Stack Observability (Prometheus + Grafana)
+We implement AIOps-level monitoring using **Prometheus** to scrape FastAPI `/metrics` in real-time, visualized via **Grafana** dashboards.
+- **Metrics Tracked**: LLM Token Consumption, API Latency (P99), Rate Limit (HTTP 429) spikes, and Redis cache hit ratios.
+- **AIOps Self-Healing**: Instead of manual intervention, our monitoring layer seamlessly interfaces with the LLM Cascade Fallback mechanism. If DeepSeek latency spikes or fails, the system automatically routes traffic to Gemini, achieving zero-downtime self-healing.
+
+### Disaster Recovery (Pilot Light IaC) & Chaos Engineering
+To guarantee enterprise-grade resilience while minimizing Total Cost of Ownership (TCO), we implemented a **Pilot Light** disaster recovery strategy managed by Infrastructure as Code (IaC).
+- **RPO (Recovery Point Objective) < 15 mins**: All stateful data (PostgreSQL, Milvus) is continuously backed up via asynchronous cross-region snapshots to a cold S3 bucket.
+- **RTO (Recovery Time Objective) < 10 mins**: If the primary environment suffers a catastrophic failure, our pre-configured `terraform` blueprint is executed to instantly provision a fresh AWS EC2 cluster, pull docker images, and restore state.
+
+To prevent "Configuration Drift" in this DR strategy, we implemented automated Chaos Engineering drills:
+- **Weekly Fire Drills**: A GitHub Actions workflow (`dr_game_day.yml`) runs every Sunday at 3:00 AM. It automatically SSHs into our AWS Standby server, spins up the entire Docker cluster, and runs the Ragas end-to-end evaluation to ensure IaC readiness.
 
 ---
 
