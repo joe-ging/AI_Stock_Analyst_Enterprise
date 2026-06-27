@@ -178,8 +178,17 @@ def build_audit_prompt(draft: str, retrieved_context: str, target_lang: str, fil
         f"[DRAFT REPORT]:\n{draft}"
     )
 
+import httpx
+proxy_env = os.environ.get("HTTP_PROXY") or os.environ.get("ALL_PROXY")
+if proxy_env:
+    proxy_url = proxy_env.replace("socks5h://", "socks5://")
+    logger.info(f"Initializing GenAI Client with explicit proxy: {proxy_url}")
+    http_client = httpx.Client(proxies=proxy_url, timeout=60.0)
+    client = genai.Client(api_key=API_KEY, http_client=http_client)
+else:
+    client = genai.Client(api_key=API_KEY)
+
 app = FastAPI()
-client = genai.Client(api_key=API_KEY)
 
 def call_deepseek(prompt: str, model: str = "deepseek-chat") -> str:
     """Synchronous DeepSeek call (kept for backward compat with tests/eval)"""
