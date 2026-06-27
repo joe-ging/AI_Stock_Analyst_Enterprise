@@ -25,9 +25,11 @@
   - **Milvus (单机版)**: 高维向量存储。
   - **Redis**: 内存级语义检索缓存与任务队列状态管理。
 - **AI 大模型与编排层**: 
-  - **内容生成 (推理)**: DeepSeek-Chat (主节点) / Gemini 2.5 Pro (无缝降级备用节点)。
-  - **语义提取 (Embeddings)**: 由于 DeepSeek 原生不支持向量化，我们采用 **OpenAINext (`text-embedding-3-small`)** 作为主力的向量模型，并使用 Gemini Embeddings 作为高可用备用方案。
-  - **大模型编排**: 采用 LangChain 风格的异步 RAG 数据流水线，结合类似 LangGraph 机制的独立审计路由闭环。
+  | 领域 | 首选方案 | 降级备用方案 | 选型理由 |
+  | :--- | :--- | :--- | :--- |
+  | **内容生成 (推理)** | **DeepSeek-Chat** | Gemini 2.5 Pro | DeepSeek 提供无与伦比的推理成本效益；Gemini 提供高吞吐量容灾托底。 |
+  | **语义提取 (Embeddings)** | **OpenAINext** (`text-embedding-3-small`) | Gemini Embeddings | 由于 DeepSeek 原生不支持向量化，OpenAINext 提供高质量的稠密向量。 |
+  | **大模型编排**| **LangChain/LangGraph** | 纯自研异步流水线 | 允许实现复杂的循环路由机制，专为 Ragas 审计器设计。 |
 
 ---
 
@@ -98,14 +100,11 @@ sequenceDiagram
 
 我们摒弃了用单一庞大数据库处理所有负载的传统模式，转而采用了“多语言持久化”架构，确保特定的性能瓶颈被最合适的数据库解决：
 
-1. **Redis (内存级键值存储与缓存)**: 
-   - *角色*: 语义检索拦截层与 Celery 消息队列后台。
-   - *优化*: 在查询 Milvus 之前，引擎会计算当前用户查询与历史记录的向量余弦相似度。若相似度 > 0.97，API 将彻底绕过向量数据库和大模型层，直接从 Redis 返回结果。这不仅实现了 0ms 的闪电响应，还节省了 100% 的 Token 开销。
-2. **PostgreSQL (ACID 关系型数据库)**: 
-   - *角色*: 负责存储文档元数据、文本块映射与任务处理状态。选择 PostgreSQL 而非 NoSQL，是因为在追踪文档流转状态时需要极其严格的 ACID 事务保证。
-   - *优化*: 部署了 **PgBouncer** 以防止高并发下的连接数耗尽。通过 `EXPLAIN ANALYZE` 验证了基于 B-Tree 的高频复合查询索引，并开启了慢查询持续监控。
-3. **Milvus (高维稠密向量存储)**: 
-   - *角色*: 专职存储与检索被切分的文档密集向量。选择独立的 Milvus 而不是 PostgreSQL 的 `pgvector` 插件，是因为 Milvus 在面对数以百万计的高维 SEC 文档向量时，水平扩展能力更强，且原生支持高级的 ANN 索引机制。
+| 组件 | 技术栈 | 核心职责 | 选型理由 (对比替代方案) | 深度优化策略 |
+| :--- | :--- | :--- | :--- | :--- |
+| **关系型元数据** | **PostgreSQL** | 存储文档元数据、文本块映射与任务处理状态。 | 相比 NoSQL (如 MongoDB)，在追踪文档流转状态时，我们需要极其严格的 ACID 事务保证。 | 部署 **PgBouncer** 防连接耗尽；通过 `EXPLAIN ANALYZE` 验证 B-Tree 索引。 |
+| **向量存储** | **Milvus** (单机版) | 专职存储与检索被切分的文档密集向量。 | 相比 PostgreSQL 的 `pgvector` 插件，Milvus 在面对数以百万计的高维向量时，水平扩展能力更强，原生支持 ANN (HNSW) 索引。 | 部署在私有子网中，与关系型数据库分离，可独立进行算力缩放。 |
+| **内存级缓存** | **Redis** | 语义检索拦截层与 Celery 消息队列后台。 | 相比 Memcached，Redis 具备数据持久化能力，且原生支持 Celery 所需的复杂数据结构。 | 拦截查询并计算余弦相似度。缓存命中 (>0.97) 时彻底绕过大模型层，实现 0ms 闪电响应。 |
 
 ```mermaid
 sequenceDiagram
@@ -163,17 +162,33 @@ graph TD
 
 ---
 
+## 🔹 7. 安全与密钥管理 (Secret Management)
+
+企业级金融应用对密钥管理有极其严苛的要求。API 密钥 (Gemini, DeepSeek, OpenAINext) 和数据库凭证**绝对禁止**硬编码在代码库中。
+
+| 运行环境 | 密钥管理策略 (Secret Management Strategy) |
+| :--- | :--- |
+| **本地开发环境** | 通过本地的 `.env` 文件注入环境变量 (已被 `.gitignore` 忽略，防泄露)。 |
+| **CI/CD 流水线** | 在 GitHub Actions 执行期间，通过 **GitHub Secrets** 进行安全托管与注入。 |
+| **生产环境** | 生产环境密钥由云厂商的 KMS (密钥管理服务) 统一托管，或在腾讯云/AWS 容器运行时作为加密环境变量安全注入。 |
+
+---
+
 ## 🚀 快速启动 (本地 Docker 部署)
 
+> [!IMPORTANT]
+> 本代码库为企业级私有仓库。在尝试克隆之前，请确保你已经向管理员申请并获取了仓库访问权限。
+
 ```bash
-# 克隆代码库
-git clone https://github.com/joe-ging/AI_Stock_Analyst_Enterprise.git
+# 克隆私有代码库 (需要配置 SSH 密钥或 PAT 令牌)
+git clone git@github.com:joe-ging/AI_Stock_Analyst_Enterprise.git
 cd AI_Stock_Analyst_Enterprise
 
-# 配置环境变量
-echo "GEMINI_API_KEY=your_key" >> .env
-echo "DEEPSEEK_API_KEY=your_key" >> .env
-echo "OPENAINEXT_API_KEY=your_key" >> .env
+# 创建并配置本地加密环境变量文件
+touch .env
+echo "GEMINI_API_KEY=your_key_here" >> .env
+echo "DEEPSEEK_API_KEY=your_key_here" >> .env
+echo "OPENAINEXT_API_KEY=your_key_here" >> .env
 
 # 一键启动全套微服务集群
 docker-compose up -d --build

@@ -25,9 +25,11 @@ Our system is decoupled into specialized microservices, avoiding monolithic bott
   - **Milvus (Standalone)**: High-dimensional vector storage.
   - **Redis**: In-memory semantic caching and task state management.
 - **AI Models & Orchestration**: 
-  - **Generation (Inference)**: DeepSeek-Chat (Primary) / Gemini 2.5 Pro (Fallback).
-  - **Embeddings**: DeepSeek does not natively support embeddings. Thus, we utilize **OpenAINext (`text-embedding-3-small`)** as the primary vectorization model, with Gemini Embeddings serving as the highly-available fallback.
-  - **Orchestration**: Custom LangChain-style async pipelines with LangGraph-inspired routing loops.
+  | Domain | Primary Selection | Fallback / Alternative | Rationale |
+  | :--- | :--- | :--- | :--- |
+  | **Generation** | **DeepSeek-Chat** | Gemini 2.5 Pro | DeepSeek offers unmatched reasoning cost-efficiency. Gemini provides high-throughput failover. |
+  | **Embeddings** | **OpenAINext** (`text-embedding-3-small`) | Gemini Embeddings | DeepSeek lacks native embeddings. OpenAINext provides high-quality dense vectors. |
+  | **Orchestration**| **LangChain/LangGraph** | Custom Async Pipelines | Enables complex, cyclic routing loops for the Ragas auditor. |
 
 ---
 
@@ -98,14 +100,11 @@ Due to Gemini API's strict regional blocking in Hong Kong, the initial architect
 
 We utilize a combination of purpose-built databases (**Polyglot Persistence**) rather than forcing a single monolith DB to handle all workloads. This prevents locking and ensures specific bottlenecks are handled optimally:
 
-1. **Redis (In-Memory Key-Value & Cache)**: 
-   - *Role*: Semantic caching and Celery message broker backend.
-   - *Optimization*: Before querying Milvus, the Engine computes the cosine similarity of user queries against previous requests. If similarity is > 0.97, the API bypasses the Vector DB and LLM layers entirely, delivering a 0ms response and saving 100% of Token costs.
-2. **PostgreSQL (ACID Relational Database)**: 
-   - *Role*: Stores document metadata, chunk mapping, and ingestion status. Chosen over NoSQL for strict ACID transactional guarantees when tracking document state.
-   - *Optimization*: Implemented **PgBouncer** connection pooling to prevent connection exhaustion under high concurrency. High-frequency queries are backed by B-Tree indexing (verified via `EXPLAIN ANALYZE`), and continuous slow-query monitoring is enabled.
-3. **Milvus (High-Dimensional Vector Store)**: 
-   - *Role*: Stores and searches chunked dense vectors. Chosen over `pgvector` because standalone Milvus scales infinitely better for millions of high-dimensional SEC document chunks, supporting advanced ANN indexing.
+| Component | Technology | Primary Role | Why we chose it (vs Alternatives) | Optimization Strategy |
+| :--- | :--- | :--- | :--- | :--- |
+| **Relational Metadata** | **PostgreSQL** | Store document metadata, chunk mapping, and ingestion status. | Chosen over NoSQL (MongoDB) for strict ACID transactional guarantees when tracking financial document state. | Implemented **PgBouncer** connection pooling. B-Tree indexing verified via `EXPLAIN ANALYZE`. |
+| **Vector Store** | **Milvus** (Standalone) | Store and search chunked high-dimensional dense vectors. | Chosen over `pgvector` because standalone Milvus scales infinitely better for millions of vectors, supporting advanced ANN (HNSW) indexing. | Isolated in a private subnet, scaled independently of metadata DB. |
+| **In-Memory Cache** | **Redis** | Semantic caching and Celery message broker backend. | Chosen over Memcached due to persistence features and support for complex data structures required by Celery. | Compute cosine similarity of queries. Cache hits (>0.97) bypass LLM layer for 0ms response. |
 
 ```mermaid
 sequenceDiagram
@@ -163,17 +162,33 @@ The system runs on a containerized environment deployed via automated CI/CD pipe
 
 ---
 
+## 🔹 7. Security & Secret Management
+
+Enterprise financial applications require strict secret management. API keys (Gemini, DeepSeek, OpenAINext) and database credentials are **never** hardcoded into the repository.
+
+| Environment | Secret Management Strategy |
+| :--- | :--- |
+| **Local Development** | Injected via local `.env` files (ignored by `.gitignore`). |
+| **CI/CD Pipeline** | Managed securely via **GitHub Secrets** during GitHub Actions execution. |
+| **Production** | Managed via Cloud Key Management Service (KMS) or injected as secure runtime environment variables into the Tencent/AWS container environment. |
+
+---
+
 ## 🚀 Quick Start (Local Docker Deployment)
 
+> [!IMPORTANT]
+> This is a private enterprise repository. Please ensure you have been granted repository access by the administrator before attempting to clone.
+
 ```bash
-# Clone repository
-git clone https://github.com/joe-ging/AI_Stock_Analyst_Enterprise.git
+# Clone the private repository (requires SSH key or PAT)
+git clone git@github.com:joe-ging/AI_Stock_Analyst_Enterprise.git
 cd AI_Stock_Analyst_Enterprise
 
-# Set environment variables
-echo "GEMINI_API_KEY=your_key" >> .env
-echo "DEEPSEEK_API_KEY=your_key" >> .env
-echo "OPENAINEXT_API_KEY=your_key" >> .env
+# Create and populate the local secret environment file
+touch .env
+echo "GEMINI_API_KEY=your_key_here" >> .env
+echo "DEEPSEEK_API_KEY=your_key_here" >> .env
+echo "OPENAINEXT_API_KEY=your_key_here" >> .env
 
 # Launch entire microservice cluster
 docker-compose up -d --build
