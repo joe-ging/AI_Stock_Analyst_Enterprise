@@ -178,14 +178,7 @@ def build_audit_prompt(draft: str, retrieved_context: str, target_lang: str, fil
         f"[DRAFT REPORT]:\n{draft}"
     )
 
-import httpx
-proxy_env = os.environ.get("HTTP_PROXY") or os.environ.get("ALL_PROXY")
-if proxy_env:
-    proxy_url = proxy_env.replace("socks5h://", "socks5://")
-    logger.info(f"Initializing GenAI Client with explicit proxy: {proxy_url}")
-    client = genai.Client(api_key=API_KEY, http_options={"proxy": proxy_url})
-else:
-    client = genai.Client(api_key=API_KEY)
+client = genai.Client(api_key=API_KEY)
 
 app = FastAPI()
 
@@ -587,17 +580,26 @@ async def query_rag(
     sub_queries = [target_query] + GENERIC_SUB_QUERIES
     
     # Parallel sub-query embedding via asyncio
-    async def embed_single(sq: str):
+    async def embed_single(sq):
+        # Parallel sub-query embedding via standard REST API
+        proxy_url = os.environ.get("HTTP_PROXY") or os.environ.get("ALL_PROXY")
+        proxy_url_clean = proxy_url.replace("socks5h://", "socks5://") if proxy_url else None
+        transport_proxy = {"all://": proxy_url_clean} if proxy_url_clean else None
+        
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent?key={API_KEY}"
+        payload = {
+            "content": {
+                "parts": [{"text": sq}]
+            }
+        }
+        
         try:
-            emb_res = await asyncio.to_thread(
-                client.models.embed_content,
-                model="gemini-embedding-2",
-                contents=sq,
-                config=types.EmbedContentConfig(output_dimensionality=768)
-            )
-            return emb_res.embeddings[0].values
+            async with httpx.AsyncClient(proxies=transport_proxy, timeout=30.0) as cl:
+                res = await cl.post(url, json=payload)
+                res.raise_for_status()
+                return res.json()["embedding"]["values"]
         except Exception as e:
-            logger.error(f"Embedding sub-query failed: {e}")
+            logger.error(f"Embedding subquery failed: {e}")
             return None
     
     embedding_results = await asyncio.gather(*[embed_single(sq) for sq in sub_queries])
@@ -748,13 +750,24 @@ async def _build_rag_context(filename: str, analysis_type: str, language: str):
         raise HTTPException(status_code=400, detail=f"Invalid analysis_type: {analysis_type}")
     target_query = template["query"]
     logger.info(f"[DEBUG] _build_rag_context: Query template found, embedding query text: {target_query[:60]}...")
-    # Embed query
-    emb_query_res = client.models.embed_content(
-        model="gemini-embedding-2",
-        contents=target_query,
-        config=types.EmbedContentConfig(output_dimensionality=768)
-    )
-    query_vector = emb_query_res.embeddings[0].values
+    # Embed query via standard REST API over proxy
+    proxy_url = os.environ.get("HTTP_PROXY") or os.environ.get("ALL_PROXY")
+    proxy_url_clean = proxy_url.replace("socks5h://", "socks5://") if proxy_url else None
+    transport_proxy = {"all://": proxy_url_clean} if proxy_url_clean else None
+    
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent?key={API_KEY}"
+    payload = {
+        "content": {
+            "parts": [{"text": target_query}]
+        }
+    }
+    
+    with httpx.Client(proxies=transport_proxy, timeout=30.0) as cl:
+        logger.info("[DEBUG] Requesting Gemini Embedding via standard REST API...")
+        res = cl.post(url, json=payload)
+        res.raise_for_status()
+        query_vector = res.json()["embedding"]["values"]
+        
     logger.info("[DEBUG] _build_rag_context: Embedding successful. Querying Milvus semantic cache...")
     
     # Check semantic cache
