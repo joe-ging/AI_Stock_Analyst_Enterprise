@@ -9,6 +9,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.22.20/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Noto+Sans+TC:wght@400;700&display=swap');
         body { font-family: 'Inter', 'Noto Sans TC', 'PingFang SC', sans-serif; }
@@ -189,6 +190,18 @@
                     }
                 }
                 return md;
+            };
+
+            const downloadPDF = () => {
+                const element = document.getElementById('report-content');
+                const opt = {
+                    margin:       [15, 15, 15, 15],
+                    filename:     `JL_Intelligence_Report_${ticker || 'Document'}.pdf`,
+                    image:        { type: 'jpeg', quality: 0.98 },
+                    html2canvas:  { scale: 2, useCORS: true },
+                    jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                };
+                html2pdf().set(opt).from(element).save();
             };
 
             const runAnalysis = async () => {
@@ -510,7 +523,18 @@
                                     </div>
                                 )}
                                 
-                                <span className="text-[10px] font-bold text-gray-400 italic uppercase">{t.version}</span>
+                                <div className="flex items-center gap-4">
+                                    {result !== "" && !isLoading && (
+                                        <button 
+                                            onClick={downloadPDF}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase rounded-md shadow-sm transition-all active:scale-95 cursor-pointer"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                            Export PDF
+                                        </button>
+                                    )}
+                                    <span className="text-[10px] font-bold text-gray-400 italic uppercase">{t.version}</span>
+                                </div>
                             </div>
 
                             <div className="flex-1 p-12 overflow-y-auto">
@@ -532,17 +556,19 @@
                                 )}
 
                                 {result !== "" && (
-                                    <div className="mb-8 inline-flex items-center gap-2 bg-indigo-50 border border-indigo-100 text-indigo-700 px-4 py-2 rounded-full text-xs font-bold shadow-sm animate-in fade-in slide-in-from-bottom-2">
-                                        {uploadMode === 'pdf' ? t.originalDoc : "📄 Source: SEC EDGAR Database"}
-                                    </div>
-                                )}
+                                    <div id="report-content" className="bg-white pb-8">
+                                        <div className="mb-8 inline-flex items-center gap-2 bg-indigo-50 border border-indigo-100 text-indigo-700 px-4 py-2 rounded-full text-xs font-bold shadow-sm animate-in fade-in slide-in-from-bottom-2">
+                                            {uploadMode === 'pdf' ? t.originalDoc : (
+                                                <a href={`https://www.sec.gov/edgar/browse/?CIK=${ticker}`} target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
+                                                    📄 Source: SEC EDGAR Database (View Official Filings)
+                                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                                                </a>
+                                            )}
+                                        </div>
 
-                                {result !== "" && (
-                                    <div className="markdown-content max-w-none animate-in fade-in slide-in-from-bottom-4 duration-1000" dangerouslySetInnerHTML={{ __html: marked.parse(ensureClosedMarkdownTables(result)) }}></div>
-                                )}
+                                        <div className="markdown-content max-w-none animate-in fade-in slide-in-from-bottom-4 duration-1000" dangerouslySetInnerHTML={{ __html: marked.parse(ensureClosedMarkdownTables(result)) }}></div>
 
-                                {result !== "" && (
-                                    <div className="mt-10 pt-8 border-t border-gray-100">
+                                        <div className="mt-10 pt-8 border-t border-gray-100">
                                         <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-6">{t.ragasScore}</div>
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                             {[
@@ -612,6 +638,7 @@
                                         <span>Generated by JL Agent on Gemini 2.5 Flash</span>
                                     </div>
                                 )}
+                                </div>
                             </div>
                         </div>
                     </main>
