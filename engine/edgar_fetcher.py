@@ -68,9 +68,21 @@ async def get_cik(ticker: str) -> str:
         ValueError if ticker not found
     """
     ticker = ticker.upper().strip()
+    
+    # 🌟 Hardcoded fallback for missing ADRs in SEC JSON (e.g. DAO)
+    hardcoded_map = {
+        "DAO": "0001786187",
+    }
+    
+    if ticker in hardcoded_map:
+        cik_padded = hardcoded_map[ticker].zfill(10)
+        logger.info(f"[EDGAR] Resolved {ticker} (Hardcoded Fallback) → CIK {cik_padded}")
+        return cik_padded
+
     ticker_map = await _load_ticker_map()
     if ticker not in ticker_map:
         raise ValueError(f"Ticker '{ticker}' not found in SEC EDGAR database")
+    
     cik_raw = ticker_map[ticker]
     cik_padded = cik_raw.zfill(10)
     logger.info(f"[EDGAR] Resolved {ticker} → CIK {cik_padded}")

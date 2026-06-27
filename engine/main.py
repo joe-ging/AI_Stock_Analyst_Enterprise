@@ -608,7 +608,10 @@ async def query_rag(
     start_time = time.time()
     cache_uuid = None
     
-    doc_ids, db_company_name, db_doc_type, db_doc_year = await resolve_document_ids(filename)
+    try:
+        doc_ids, db_company_name, db_doc_type, db_doc_year = await resolve_document_ids(filename)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     
     # 2. Redis Semantic Cache (Cosine > 0.97 in Milvus cache index)
     template = REPORT_TEMPLATES.get(analysis_type)
@@ -668,7 +671,7 @@ async def query_rag(
         "zh_hk": "Traditional Chinese (繁體中文)"
     }
     target_lang = LANG_MAP.get(language.value, "English")
-    logger.info(f"Router directed query: {analysis_type.value} | Language: {target_lang}")
+    logger.info(f"Router directed query: {analysis_type} | Language: {target_lang}")
 
     # Node 2: Retriever Node (Milvus Parent-Child Search with Query Decomposition)
     logger.info("LangGraph [Retriever Node] executing parent-child similarity search...")
@@ -823,6 +826,22 @@ async def query_rag(
             logger.info(f"Saved query results to Redis and indexed query in Milvus cache: {new_cache_key}")
         except Exception as e:
             logger.error(f"Failed to update semantic cache store: {e}")
+            
+    # Insert into postgres query history
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "INSERT INTO query_logs (document_ids, target_query, language, output_text, inference_time_ms) VALUES (%s, %s, %s, %s, %s);",
+            (filename, target_query, language.value, final_report, output_data["inference_time_ms"])
+        )
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Failed to save to query_logs table: {e}")
+    finally:
+        cur.close()
+        return_db_connection(conn)
 
     return output_data
 
@@ -1065,7 +1084,11 @@ async def query_rag_stream(
     
     start_time = time.time()
     logger.info(f"[DEBUG] query_rag_stream: Endpoint hit for {filename}. Building RAG context...")
-    ctx = await _build_rag_context(filename, analysis_type.value, language.value)
+    try:
+        ctx = await _build_rag_context(filename, analysis_type, language.value)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
     logger.info(f"[DEBUG] query_rag_stream: Context built successfully (is_none={ctx is None}). Starting SSE generator...")
     
     if ctx is None:
@@ -1249,6 +1272,23 @@ async def query_rag_stream(
                 logger.info(f"[Stream] Cached results: {new_cache_key}")
             except Exception as e:
                 logger.error(f"[Stream] Cache write failed: {e}")
+                
+        # Save to DB history
+        conn = get_db_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "INSERT INTO query_logs (document_ids, target_query, language, output_text, ragas_scores, inference_time_ms) VALUES (%s, %s, %s, %s, %s, %s);",
+                (ctx_filename, target_query, language.value, final_report_text, json.dumps(ragas_scores) if ragas_scores else None, output_data["inference_time_ms"])
+            )
+            conn.commit()
+            logger.info("[Stream] Saved query to query_logs table.")
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"[Stream] Failed to save to query_logs table: {e}")
+        finally:
+            cur.close()
+            return_db_connection(conn)
         
         # Send final metadata event with Ragas scores and compiled citations
         yield f"data: {json.dumps({'type': 'done', 'inference_time_ms': int((time.time() - start_time) * 1000), 'citations': citations, 'ragas_scores': ragas_scores})}\n\n"
