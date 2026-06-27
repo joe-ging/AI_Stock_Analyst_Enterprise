@@ -182,6 +182,8 @@ This project natively demonstrates several key **Solutions Architect (SA)** prin
    Extracting structured tables from SEC PDFs via `pdfplumber` is highly CPU-bound. Instead of blocking the FastAPI thread pool, the architecture publishes an asynchronous event to RabbitMQ. The Celery Worker cluster consumes this queue, allowing the HTTP API Gateway to scale independently of the ingestion pipeline.
 4. **Zero-Downtime DevOps Delivery:** 
    The deployment workflow utilizes GitOps principles (GitHub Actions). The custom `deploy.sh` script applies rolling updates specifically to stateless containers (`gateway`, `engine`), intentionally preserving stateful volumes (`postgres`, `milvus`, `redis`) to prevent enterprise data corruption.
+5. **Multi-Cloud Networking & Proxy Elimination (TCO Strategy):** 
+   Due to Gemini API's strict regional blocking in Hong Kong, the initial architecture relied on a brittle SOCKS5 proxy tunnel routing all LLM requests through an AWS Sydney EC2 instance. This drastically increased latency. As a subsequent SA optimization, the stateless `engine` and `gateway` containers were permanently migrated to an AWS Sydney environment, natively bypassing regional API blocks and eliminating the proxy layer overhead, reducing API latency by over 50%.
 
 ---
 

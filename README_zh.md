@@ -182,6 +182,8 @@ docker-compose logs -f engine worker
    使用 `pdfplumber` 解析长达百页且格式极度复杂的 SEC 财报属于典型的 CPU 密集型任务。架构设计并没有让 FastAPI 线程池死等解析完成，而是将任务事件发布至 RabbitMQ 队列。后台的 Celery Worker 集群默默消费并处理这些事件，使得前端 HTTP API Gateway 能够独立应对极高的并发访问量。
 4. **零宕机 DevOps 交付体系：** 
    项目运用了 GitOps 理念 (GitHub Actions)。自研的 `deploy.sh` 脚本在部署更新时实施“滚动升级”，专门指定更新无状态的计算节点（`gateway`，`engine`），并小心翼翼地绕过有状态的数据卷（`postgres`，`milvus`，`redis`），在不丢失任何一条历史日志和向量索引的前提下完成了敏捷迭代。
+5. **多云网络优化与去除代理层 (TCO 演进策略)：** 
+   由于 Gemini API 在香港存在严苛的区域网络封锁，最初的架构不得不依赖脆弱的 SOCKS5 代理隧道，将所有大模型请求强制路由至 AWS 悉尼代理机，这极大地增加了整体延迟与不稳定因子。作为后续的 SA 架构优化演进，系统将无状态的 `engine` 和 `gateway` 容器彻底跨云迁移至原生支持 Gemini 的 AWS 悉尼环境。这不但彻底消除了代理层的网络开销，更让 API 调用延迟直接降低了 50% 以上。
 
 ---
 
