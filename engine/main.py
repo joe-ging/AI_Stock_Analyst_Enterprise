@@ -57,39 +57,45 @@ REPORT_TEMPLATES = {
         "role": "Lead Equity Research Analyst",
         "query": (
             "Prepare an institutional-grade investment memorandum. Structure the report exactly as follows:\n"
-            "1. **EXECUTIVE SUMMARY & INVESTMENT THESIS**: State the investment rating (Buy/Hold/Sell) and the core qualitative justification.\n"
-            "2. **FINANCIAL PERFORMANCE & TREND AUDIT**: Analyze revenues, operational margins, and cash flow trends. Use markdown tables to compare fiscal years.\n"
-            "3. **KEY INVESTMENT RISKS & MITIGATION**: Graded analysis (High/Medium/Low impact) of regulatory, competitive, and operational risks.\n"
-            "4. **VALUATION & CAPITAL STRUCTURE AUDIT**: Analyze long-term investments, Level 3 asset valuations, and tax considerations (e.g., PFIC classification status).\n"
-            "5. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
+            "0. **REPORT HEADER**: Ticker, Sector, Current Stock Price (with currency), Current Rating (Buy/Hold/Sell), Price Target, and Market Capitalization. Presentation must look like a standard Wall Street analyst report.\n"
+            "1. **EXECUTIVE SUMMARY & INVESTMENT THESIS**: State the investment rating and price target. Detail the core investment thesis and key near-term catalysts.\n"
+            "2. **BUSINESS DESCRIPTION & SEGMENT BREAKDOWN**: Analyze the business model, reportable segments, and key revenue drivers. Use markdown tables to compare segment net revenues and operating income trends across fiscal years.\n"
+            "3. **FINANCIAL PERFORMANCE & CASH FLOW AUDIT**: Deep dive into profit margins (Operating Margin, EBITDA trend), balance sheet leverage, capital expenditures, and free cash flow generation.\n"
+            "4. **VALUATION, LEVEL 3 ASSETS & CAPITAL STRUCTURE AUDIT**: Audit the valuation methodologies (e.g., DCF model inputs, comparable multiples), unobservable inputs for Level 3 assets, and critical tax considerations (specifically PFIC classification status and cross-border tax treatment).\n"
+            "5. **KEY INVESTMENT RISKS & MITIGATION MATRIX**: Provide a graded matrix table (High/Medium/Low impact) evaluating regulatory, geopolitical, competitive, and operational risks alongside specific mitigation factors.\n"
+            "6. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
         ),
         "struct": (
-            "You are a Lead Equity Research Analyst preparing an institutional-grade investment memorandum for executive leadership. "
-            "The report must be highly professional, avoiding generic filler, and structured exactly as follows:\n\n"
-            "1. **EXECUTIVE SUMMARY & INVESTMENT THESIS**: State the rating (Buy/Hold/Sell) and the core justification.\n"
-            "2. **FINANCIAL PERFORMANCE & TREND AUDIT**: Analyze revenues, margins, and cash flow trends. Use tables if appropriate.\n"
-            "3. **KEY INVESTMENT RISKS & MITIGATION**: Graded analysis of regulatory, competitive, and operational risks.\n"
-            "4. **VALUATION & CAPITAL STRUCTURE AUDIT**: Deep dive into long-term investments, Level 3 asset valuations, and tax considerations (e.g., PFIC status).\n"
-            "5. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
+            "You are a Lead Equity Research Analyst preparing an institutional-grade investment memorandum for executive leadership and the investment committee. "
+            "The report must be highly quantitative, objective, and structured exactly as follows:\n\n"
+            "0. **REPORT HEADER**: Display standard Wall Street research header including Ticker, Rating, Target Price, and basic equity data.\n"
+            "1. **EXECUTIVE SUMMARY & INVESTMENT THESIS**: Outline rating, target price, investment thesis, and near-term catalysts.\n"
+            "2. **BUSINESS DESCRIPTION & SEGMENT BREAKDOWN**: Detailed analysis of segments and revenue streams with comparison tables.\n"
+            "3. **FINANCIAL PERFORMANCE & CASH FLOW AUDIT**: Audit margins, leverage, and free cash flow trends.\n"
+            "4. **VALUATION, LEVEL 3 ASSETS & CAPITAL STRUCTURE AUDIT**: Valuation model assumptions (DCF/comps), Level 3 assets unobservable inputs, and PFIC tax status analysis.\n"
+            "5. **KEY INVESTMENT RISKS & MITIGATION MATRIX**: Graded table (High/Medium/Low) of regulatory, geopolitical, and business risks and mitigations.\n"
+            "6. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
         )
     },
     "compliance": {
         "role": "Chief Compliance Officer",
         "query": (
-            "Prepare a regulatory audit report. Structure the report exactly as follows:\n"
-            "1. **COMPLIANCE EXECUTIVE SUMMARY**: Overall compliance risk warning rating (High/Medium/Low Risk) and summary.\n"
-            "2. **LITIGATION & INTELLECTUAL PROPERTY AUDIT**: Detail any copyright disputes, historical judgements, damages paid, and policy gaps.\n"
-            "3. **REGULATORY POLICY & SHIFT IMPACTS**: Analyze the impact of regulatory changes on business operations and transformation.\n"
-            "4. **TAX COMPLIANCE & CROSS-BORDER DISCLOSURE**: Detail PFIC classification, tax tests, and implications for foreign investors.\n"
+            "Prepare a professional, institutional-grade regulatory audit report. Structure the report exactly as follows:\n"
+            "0. **COMPLIANCE METRICS HEADER**: Ticker, SEC Filing Type (e.g., Form 20-F), Filing Date, Overall Compliance Risk Rating (High/Medium/Low Risk), Primary Jurisdictions (e.g., US/PRC/HK), and Lead Auditor/Firm.\n"
+            "1. **COMPLIANCE EXECUTIVE SUMMARY**: Overall compliance risk posture summary, critical compliance vulnerabilities, and corrective action priority levels.\n"
+            "2. **REGULATORY POLICY & SHIFT IMPACTS**: Detailed audit of the PCAOB audit inspection history, HFCAA compliance, data cross-border transfers (e.g., CAC filings), and Generative AI service regulatory compliance requirements.\n"
+            "3. **LITIGATION, INTELLECTUAL PROPERTY & AUDIT GAPS**: Comprehensive analysis of copyrights/trademark disputes, historical administrative fines, material litigations, and control gaps in contract compliance.\n"
+            "4. **VIE STRUCTURE, TAX COMPLIANCE & PFIC DISCLOSURE**: Audit of Variable Interest Entity (VIE) regulatory validity, foreign exchange repatriation rules, PFIC (Passive Foreign Investment Company) status tests, and U.S. federal income tax implications.\n"
             "5. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
         ),
         "struct": (
-            "You are a Chief Compliance Officer preparing a regulatory audit report. "
-            "The report must be highly professional, focusing strictly on risks and compliance framework, and structured exactly as follows:\n\n"
-            "1. **COMPLIANCE EXECUTIVE SUMMARY**: Overall compliance risk warning rating (High/Medium/Low Risk) and summary.\n"
-            "2. **LITIGATION & INTELLECTUAL PROPERTY AUDIT**: Detail any copyright disputes, historical judgements, damages paid, and policy gaps.\n"
-            "3. **REGULATORY POLICY & SHIFT IMPACTS**: Analyze the impact of regulatory changes on business operations and transformation.\n"
-            "4. **TAX COMPLIANCE & CROSS-BORDER DISCLOSURE**: Detail PFIC classification, tax tests, and implications for foreign investors.\n"
+            "You are a Chief Compliance Officer preparing a regulatory audit report for the Board of Directors and the Audit Committee. "
+            "The report must be highly formal, legally precise, and structured exactly as follows:\n\n"
+            "0. **COMPLIANCE METRICS HEADER**: Display standard compliance metadata including Risk Rating and Jurisdictions.\n"
+            "1. **COMPLIANCE EXECUTIVE SUMMARY**: Clear risk posture summary and correction action priority levels.\n"
+            "2. **REGULATORY POLICY & SHIFT IMPACTS**: PCAOB, HFCAA, data security, and generative AI regulation audit.\n"
+            "3. **LITIGATION, INTELLECTUAL PROPERTY & AUDIT GAPS**: Audits of legal disputes, fine history, and contract control gaps.\n"
+            "4. **VIE STRUCTURE, TAX COMPLIANCE & PFIC DISCLOSURE**: Legal validity of VIE structure, capital control, and PFIC tax status.\n"
             "5. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
         )
     },
