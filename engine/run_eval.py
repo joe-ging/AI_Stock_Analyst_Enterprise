@@ -147,7 +147,7 @@ def main():
                 "analysis_type": "comprehensive",
                 "language": "zh_cn"
             }
-            with httpx.Client(timeout=120.0) as cl:
+            with httpx.Client(timeout=120.0, trust_env=False) as cl:
                 resp = cl.post(engine_url, data=data)
                 resp.raise_for_status()
                 res_data = resp.json()
