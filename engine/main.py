@@ -598,7 +598,7 @@ async def ingest_document(file: UploadFile = File(...)):
 async def query_rag(
     filename: str = Form(...),
     analysis_type: str = Form(...),
-    language: Language = Form(Language.EN),
+    language: Language = Form(Language.en),
 ):
     if EMBEDDING_PROVIDER == "openainext" and not OPENAINEXT_API_KEY:
         raise HTTPException(status_code=500, detail="OpenAINext API Key missing on Engine")
