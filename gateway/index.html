@@ -252,6 +252,17 @@
                         throw new Error(errorText || "API Error");
                     }
                     
+                    const contentType = response.headers.get("content-type");
+                    if (contentType && contentType.includes("application/json")) {
+                        const data = await response.json();
+                        setResult(data.analysis || "");
+                        if (data.citations) setCitations(data.citations);
+                        if (data.inference_time_ms) setInferenceTime(data.inference_time_ms);
+                        if (data.ragas_scores) setRagasScores(data.ragas_scores);
+                        setCacheHit(data.cache_hit || false);
+                        return;
+                    }
+                    
                     if (!response.body) {
                         throw new Error("ReadableStream not supported.");
                     }
@@ -286,6 +297,7 @@
                                             if (parsed.inference_time_ms) setInferenceTime(parsed.inference_time_ms);
                                             if (parsed.ragas_scores) setRagasScores(parsed.ragas_scores);
                                             setCacheHit(parsed.cache_hit || false);
+                                            done = true; // Force exit to guarantee isLoading=false
                                         } else if (parsed.type === "error") {
                                             setError(parsed.content || "Inferencing error encountered");
                                         }
