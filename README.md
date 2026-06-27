@@ -24,12 +24,20 @@ Our system is decoupled into specialized microservices, avoiding monolithic bott
   - **PostgreSQL**: Relational metadata and document state tracking.
   - **Milvus (Standalone)**: High-dimensional vector storage.
   - **Redis**: In-memory semantic caching and task state management.
-- **AI Models & Orchestration**: 
-  | Domain | Primary Selection | Fallback / Alternative | Rationale |
-  | :--- | :--- | :--- | :--- |
-  | **Generation** | **DeepSeek-Chat** | Gemini 2.5 Pro | DeepSeek offers unmatched reasoning cost-efficiency. Gemini provides high-throughput failover. |
-  | **Embeddings** | **OpenAINext** (`text-embedding-3-small`) | Gemini Embeddings | DeepSeek lacks native embeddings. OpenAINext provides high-quality dense vectors. |
-  | **Orchestration**| **LangChain/LangGraph** | Custom Async Pipelines | Enables complex, cyclic routing loops for the Ragas auditor. |
+- **AI Models & Orchestration (Decoupled Intelligence)**: 
+  We strategically decouple the AI workloads into two distinct phases, utilizing different models optimized for each specific task based on our codebase implementation:
+  
+  1. **Phase 1: Embedding & Vectorization (User Queries & SEC Data)**
+     - *Role*: This phase is responsible for converting massive text chunks from SEC documents into dense vectors during ingestion, as well as embedding the user's question during the hybrid search process. 
+     - *Primary Model*: **OpenAINext (`text-embedding-3-small`)**. Chosen for its industry-leading semantic clustering capabilities. (Note: DeepSeek is not used here as it lacks native embedding endpoints in our setup).
+     - *Fallback Model*: **Gemini Embeddings**. If the OpenAINext API experiences rate limiting or downtime, the system seamlessly falls back to Gemini to ensure zero interruption in data ingestion or user queries.
+  
+  2. **Phase 2: Generation & Reasoning (Inference)**
+     - *Role*: After retrieving the most relevant contexts from the Milvus vector database, this phase is responsible for synthesizing the data and streaming the final analytical report back to the user.
+     - *Primary Model*: **DeepSeek-Chat**. Selected for its unmatched reasoning capabilities and cost-efficiency when generating comprehensive financial reports.
+     - *Fallback Model*: **Gemini 2.5 Pro**. If DeepSeek's API crashes (HTTP 500) or is throttled (HTTP 429), our LLM Cascade mechanism dynamically routes the streaming request to Gemini, ensuring high availability and fault tolerance.
+
+  - **Orchestration**: Custom LangChain-style async pipelines with LangGraph-inspired routing loops. Enables complex, cyclic routing loops for the Ragas auditor.
 
 ---
 
