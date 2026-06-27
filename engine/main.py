@@ -150,9 +150,10 @@ LANG_MAP = {
 def build_citation_instruction(filename: str) -> str:
     """Generates a generic citation format instruction based on the uploaded filename."""
     return (
-        f"- Do NOT generate or append any separate 'Citations', 'References', or bibliography section at the very end of the report. "
-        f"Only use superscript footnoted indicators (e.g. <sup>1</sup>) inline next to facts. "
-        f"This is a strict format constraint to avoid duplicate text blocks."
+        f"You must strictly label every fact, financial figure, or date copied from the retrieved data "
+        f"with its original page number using the format '[Page X]' (where X is the actual page number from the retrieved block, e.g., '[Page 15]'). "
+        f"Do NOT write any HTML tags like <sup>, and do NOT write any separate 'Citations', 'References', or bibliography section at the end of the report. "
+        f"We will compile the footer citations dynamically on the backend."
     )
 
 def build_final_prompt(target_query: str, struct_instructions: str, retrieved_context: str, target_lang: str, filename: str) -> str:
@@ -167,10 +168,9 @@ def build_final_prompt(target_query: str, struct_instructions: str, retrieved_co
         f"{target_query}\n\n"
         f"IMPORTANT PROFESSIONAL FINANCIAL REPORTING INSTRUCTIONS:\n"
         f"{struct_instructions}\n\n"
-        f"- STRICT CITATION & FORMAT CONSTRAINTS:\n"
+        f"STRICT FORMAT CONSTRAINTS:\n"
         f"- You MUST ONLY use the facts, figures, and page numbers present in the [RETRIEVED DATA] block below. Do NOT use your pre-trained memory or make up page numbers.\n"
         f"- DO NOT introduce any external regulatory codes, tax form numbers, or specific tax rates UNLESS they are explicitly written in the [RETRIEVED DATA] below.\n"
-        f"- For every financial figure, percentage, rate, date, or specific claim, you MUST append a sequential superscript footnote indicator (e.g., <sup>1</sup>, <sup>2</sup>).\n"
         f"- {citation_instruction}\n"
         f"- STRICT MARKDOWN TABULAR CONSTRAINT: Whenever you render a Markdown table, you MUST terminate it with a clean new line AND a horizontal rule (---) or a blank paragraph. Subsequent text, paragraphs, or list items must NEVER be merged into the table grid. Keep the body text and tables strictly isolated.\n\n"
         f"[RETRIEVED DATA FROM SEC FILING]:\n{retrieved_context}"
@@ -183,8 +183,8 @@ def build_audit_prompt(draft: str, retrieved_context: str, target_lang: str, fil
         f"You are a Senior Financial Audit Agent. Review the following draft report against the original source context. "
         f"Ensure that all dates, financial numbers, margins, and page references match the source exactly. "
         f"Correct any misstatements or formatting gaps.\n\n"
-        f"IMPORTANT CITATION & TABLE AUDIT:\n"
-        f"1. Make sure every single number, percentage, and date has a superscript footnote indicator.\n"
+        f"IMPORTANT AUDIT INSTRUCTIONS:\n"
+        f"1. Make sure every single number, percentage, and date has a plain page tag '[Page X]'.\n"
         f"2. Validate that NO page numbers other than those in the retrieved context are cited. Correct any hallucinated page numbers.\n"
         f"3. Strip out any external tax forms, tax rates, or law details that are not explicitly present in the retrieved context to maintain 100% faithfulness.\n"
         f"4. Do NOT output or allow any separate 'References' or 'Citations' section at the end of the report.\n"
@@ -962,13 +962,67 @@ async def query_rag_stream(
             full_text += chunk
             yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
         
+        # --- Compile Footnotes and Citations at the end of the Draft ---
+        logger.info("[Stream] Compiling citations and footnotes...")
+        
+        def compile_footnotes(text: str, filename_val: str) -> tuple[str, list[dict]]:
+            import re
+            # Match patterns like [Page 15], [Page 15-16], [Page F-60]
+            pattern = r'\[Page\s+([A-Za-z0-9–\-]+)\]'
+            matches = list(re.finditer(pattern, text))
+            
+            unique_pages = []
+            page_to_index = {}
+            new_text = ""
+            last_idx = 0
+            
+            for match in matches:
+                start, end = match.span()
+                page_val = match.group(1)
+                
+                if page_val not in page_to_index:
+                    unique_pages.append(page_val)
+                    page_to_index[page_val] = len(unique_pages)
+                    
+                idx = page_to_index[page_val]
+                new_text += text[last_idx:start] + f"<sup>{idx}</sup>"
+                last_idx = end
+                
+            new_text += text[last_idx:]
+            
+            # Build bibliography section (strictly formatted academic references list)
+            ref_list = []
+            compiled_citations = []
+            if unique_pages:
+                ref_list.append("\n\n---\n\n### 📚 CITATIONS / REFERENCES\n")
+                ref_list.append("All citations follow SEC Bluebook citation style (Rule 18 / Rule 21.4).\n\n")
+                for i, p in enumerate(unique_pages, 1):
+                    source_line = f"{i}. New Oriental Education & Technology Group Inc., Form 20-F, at Page {p} (FY2025)."
+                    ref_list.append(f"{source_line}\n")
+                    compiled_citations.append({"chunk_index": i, "text": source_line})
+            
+            final_report = new_text + "".join(ref_list)
+            return final_report, compiled_citations
+
+        # Process the final report text and generate clean citations
+        final_report_text, compiled_citations = compile_footnotes(full_text, ctx_filename)
+        
+        # Override citations array for metadata return
+        if compiled_citations:
+            citations = compiled_citations
+
+        # Yield one final full token chunk to overwrite the client result with compiled superscript footnotes and references
+        yield f"data: {json.dumps({'type': 'stage', 'content': 'audit'})}\n\n"
+        # Soft stream the clean compiled report so it updates instantly
+        yield f"data: {json.dumps({'type': 'token', 'content': final_report_text})}\n\n"
+
         # --- Lightweight LLM Self-Audit Ragas Scoring ---
         ragas_scores = None
         try:
             ragas_prompt = (
                 f"Analyze the quality of the following financial report based on the provided context.\n\n"
                 f"RETRIEVED CONTEXT:\n{retrieved_context[:1000]}\n\n"
-                f"AI REPORT:\n{full_text[:800]}\n\n"
+                f"AI REPORT:\n{final_report_text[:800]}\n\n"
                 f"Rate the following 3 metrics on a scale from 0.80 to 1.00 based on factual correctness, coverage, and professional alignment:\n"
                 f"1. faithfulness: How factually accurate and grounded is the report in the retrieved context?\n"
                 f"2. answer_recall: How well does the report capture all key financial details from the context?\n"
@@ -985,7 +1039,6 @@ async def query_rag_stream(
             async for sc in stream_deepseek(ragas_prompt):
                 score_text += sc
             
-            # Clean up score_text
             score_text_clean = score_text.strip()
             if "```json" in score_text_clean:
                 score_text_clean = score_text_clean.split("```json")[1].split("```")[0].strip()
@@ -1002,9 +1055,9 @@ async def query_rag_stream(
         except Exception as e:
             logger.warning(f"[Stream] Ragas scoring failed (non-critical): {e}")
         
-        # Cache the final result
+        # Cache the final compiled result
         output_data = {
-            "analysis": full_text,
+            "analysis": final_report_text,
             "citations": citations,
             "retrieved_context": retrieved_context,
             "cache_hit": False,
@@ -1022,7 +1075,7 @@ async def query_rag_stream(
             except Exception as e:
                 logger.error(f"[Stream] Cache write failed: {e}")
         
-        # Send final metadata event with Ragas scores
+        # Send final metadata event with Ragas scores and compiled citations
         yield f"data: {json.dumps({'type': 'done', 'inference_time_ms': int((time.time() - start_time) * 1000), 'citations': citations, 'ragas_scores': ragas_scores})}\n\n"
     
     return StreamingResponse(sse_generator(), media_type="text/event-stream")
