@@ -597,8 +597,8 @@ async def ingest_document(file: UploadFile = File(...)):
 @app.post("/query")
 async def query_rag(
     filename: str = Form(...),
-    analysis_type: AnalysisType = Form(...),
-    language: Language = Form(...)
+    analysis_type: str = Form(...),
+    language: Language = Form(Language.EN),
 ):
     if EMBEDDING_PROVIDER == "openainext" and not OPENAINEXT_API_KEY:
         raise HTTPException(status_code=500, detail="OpenAINext API Key missing on Engine")
@@ -611,12 +611,12 @@ async def query_rag(
     doc_ids, db_company_name, db_doc_type, db_doc_year = await resolve_document_ids(filename)
     
     # 2. Redis Semantic Cache (Cosine > 0.97 in Milvus cache index)
-    template = REPORT_TEMPLATES.get(analysis_type.value)
+    template = REPORT_TEMPLATES.get(analysis_type)
     if template:
         target_query = template["query"]
         struct_instructions = template.get("instructions", "")
     else:
-        target_query = analysis_type.value
+        target_query = analysis_type
         struct_instructions = "Analyze the company based on the custom query."
     
     # Embed the query to check cache
@@ -1053,7 +1053,7 @@ async def _build_rag_context(filename: str, analysis_type: str, language: str):
 @app.post("/query/stream")
 async def query_rag_stream(
     filename: str = Form(...),
-    analysis_type: AnalysisType = Form(...),
+    analysis_type: str = Form(...),
     language: Language = Form(...),
     upload_mode: str = Form("pdf"),
     ticker: str = Form(None),
