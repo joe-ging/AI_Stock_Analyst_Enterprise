@@ -51,7 +51,12 @@
                 disclaimer: "本頁面由 JL Intelligence (Jingling Education) 開發，僅用於技術演示與投研流程原型展示。",
                 citeTitle: "📚 RAG 向量數據源歸因",
                 sourceText: "數據源分塊",
-                originalDoc: "📄 原報告為 182 頁的 PDF"
+                originalDoc: "📄 原報告為 182 頁的 PDF",
+                edgarMode: "🌐 SEC EDGAR 導入",
+                pdfMode: "📄 本地 PDF 上傳",
+                ticker: "股票代碼",
+                compareYears: "選擇對比年份",
+                ragasScore: "📊 檢索召回質量 (Ragas)"
             },
             zh_cn: {
                 title: "JL Intelligence | 精灵人工智能",
@@ -72,7 +77,12 @@
                 disclaimer: "本页面由 JL Intelligence (Jingling Education) 开发，仅用于技术演示与投研流程原型展示。",
                 citeTitle: "📚 RAG 向量数据源归因",
                 sourceText: "数据源分块",
-                originalDoc: "📄 原报告为 182 页的 PDF"
+                originalDoc: "📄 原报告为 182 页的 PDF",
+                edgarMode: "🌐 SEC EDGAR 导入",
+                pdfMode: "📄 本地 PDF 上传",
+                ticker: "股票代码",
+                compareYears: "选择对比年份",
+                ragasScore: "📊 检索召回质量 (Ragas)"
             },
             en: {
                 title: "JL Intelligence",
@@ -93,7 +103,12 @@
                 disclaimer: "Developed by JL Intelligence (Jingling Education) for professional demo purposes.",
                 citeTitle: "📚 RAG Vector Citations",
                 sourceText: "Source Chunk",
-                originalDoc: "📄 Original Report: 182-page PDF"
+                originalDoc: "📄 Original Report: 182-page PDF",
+                edgarMode: "🌐 SEC EDGAR Direct",
+                pdfMode: "📄 Local PDF File",
+                ticker: "Ticker Symbol",
+                compareYears: "Select Compare Years",
+                ragasScore: "📊 RAG Retrieval Quality (Ragas)"
             }
         };
 
@@ -131,6 +146,10 @@
             const [dbStatus, setDbStatus] = useState("checking");
             const [cacheHit, setCacheHit] = useState(null);
             const [inferenceTime, setInferenceTime] = useState(null);
+            const [uploadMode, setUploadMode] = useState("pdf"); // 'pdf' or 'edgar'
+            const [ticker, setTicker] = useState("EDU");
+            const [selectedYears, setSelectedYears] = useState(["2025", "2024"]);
+            const [ragasScores, setRagasScores] = useState(null);
  
             const t = LANG_DICT[lang];
  
@@ -156,18 +175,28 @@
             const handleFileUpload = (e) => setFile(e.target.files[0]);
 
             const runAnalysis = async () => {
-                if (!file) return;
+                if (uploadMode === "pdf" && !file) return;
+                if (uploadMode === "edgar" && (!ticker.trim() || selectedYears.length === 0)) return;
+
                 setIsLoading(true);
                 setResult("");
                 setError(null);
                 setCacheHit(null);
                 setInferenceTime(null);
                 setCitations([]);
+                setRagasScores(null);
 
                 const formData = new FormData();
-                formData.append('file', file);
+                formData.append('upload_mode', uploadMode);
                 formData.append('analysis_type', analysisType);
                 formData.append('language', lang);
+
+                if (uploadMode === "pdf") {
+                    formData.append('file', file);
+                } else {
+                    formData.append('ticker', ticker.toUpperCase().trim());
+                    formData.append('years', selectedYears.join(','));
+                }
 
                 if (window.isAnalyzingInProgress) {
                     console.log("Analysis already in progress, ignoring duplicate trigger");
@@ -217,6 +246,7 @@
                                         } else if (parsed.type === "done") {
                                             if (parsed.citations) setCitations(parsed.citations);
                                             if (parsed.inference_time_ms) setInferenceTime(parsed.inference_time_ms);
+                                            if (parsed.ragas_scores) setRagasScores(parsed.ragas_scores);
                                             setCacheHit(parsed.cache_hit || false);
                                         } else if (parsed.type === "error") {
                                             setError(parsed.content || "Inferencing error encountered");
@@ -296,18 +326,70 @@
                             {/* 1. Upload Box */}
                             <div className="bg-white p-6 rounded-3xl shadow-xl shadow-gray-200/50 border border-gray-100">
                                 <h2 className="text-[10px] font-black text-gray-400 mb-4 uppercase tracking-widest">01. {t.upload}</h2>
-                                <label className="block border-2 border-dashed border-gray-200 rounded-2xl p-10 text-center cursor-pointer hover:border-indigo-500 hover:bg-indigo-50/30 transition-all group">
-                                    <div className="flex flex-col items-center gap-3">
-                                        <div className="w-14 h-14 bg-gray-50 rounded-2xl flex items-center justify-center group-hover:rotate-6 transition-transform shadow-sm text-indigo-500">
-                                            <Icons.Upload />
+                                <div className="flex bg-gray-100 p-1 rounded-xl mb-4 text-[10px] font-black tracking-wider uppercase">
+                                    <button 
+                                        onClick={() => setUploadMode("pdf")}
+                                        className={`flex-1 py-1.5 rounded-lg transition-all ${uploadMode === "pdf" ? "bg-white text-gray-800 shadow-sm" : "text-gray-400 hover:text-gray-600"}`}
+                                    >
+                                        {t.pdfMode}
+                                    </button>
+                                    <button 
+                                        onClick={() => setUploadMode("edgar")}
+                                        className={`flex-1 py-1.5 rounded-lg transition-all ${uploadMode === "edgar" ? "bg-white text-gray-800 shadow-sm" : "text-gray-400 hover:text-gray-600"}`}
+                                    >
+                                        {t.edgarMode}
+                                    </button>
+                                </div>
+
+                                {uploadMode === "pdf" ? (
+                                    <label className="block border-2 border-dashed border-gray-200 rounded-2xl p-10 text-center cursor-pointer hover:border-indigo-500 hover:bg-indigo-50/30 transition-all group animate-in fade-in duration-300">
+                                        <div className="flex flex-col items-center gap-3">
+                                            <div className="w-14 h-14 bg-gray-50 rounded-2xl flex items-center justify-center group-hover:rotate-6 transition-transform shadow-sm text-indigo-500">
+                                                <Icons.Upload />
+                                            </div>
+                                            <span className="text-sm font-bold text-gray-700 truncate max-w-[200px]">
+                                                {file ? file.name : t.uploadHint}
+                                            </span>
+                                            <p className="text-[10px] text-gray-400">{t.uploadDetail}</p>
                                         </div>
-                                        <span className="text-sm font-bold text-gray-700 truncate max-w-[200px]">
-                                            {file ? file.name : t.uploadHint}
-                                        </span>
-                                        <p className="text-[10px] text-gray-400">{t.uploadDetail}</p>
+                                        <input type="file" className="hidden" accept=".pdf" onChange={handleFileUpload} />
+                                    </label>
+                                ) : (
+                                    <div className="space-y-4 p-4 bg-gray-50/50 rounded-2xl border border-gray-100/50 animate-in fade-in duration-300">
+                                        <div>
+                                            <label className="block text-[9px] font-black text-gray-400 uppercase tracking-wider mb-2">{t.ticker}</label>
+                                            <input 
+                                                type="text" 
+                                                value={ticker} 
+                                                onChange={e => setTicker(e.target.value)}
+                                                className="w-full bg-white border border-gray-200 rounded-xl px-4 py-2 text-xs font-bold text-gray-800 focus:outline-none focus:border-indigo-500 transition-colors uppercase shadow-sm"
+                                                placeholder="e.g., EDU"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[9px] font-black text-gray-400 uppercase tracking-wider mb-2">{t.compareYears}</label>
+                                            <div className="flex gap-4">
+                                                {["2025", "2024", "2023"].map(yr => (
+                                                    <label key={yr} className="flex items-center gap-2 cursor-pointer text-xs font-bold text-gray-600 hover:text-indigo-600">
+                                                        <input 
+                                                            type="checkbox" 
+                                                            checked={selectedYears.includes(yr)} 
+                                                            onChange={() => {
+                                                                if (selectedYears.includes(yr)) {
+                                                                    setSelectedYears(selectedYears.filter(y => y !== yr));
+                                                                } else {
+                                                                    setSelectedYears([...selectedYears, yr].sort().reverse());
+                                                                }
+                                                            }}
+                                                            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5"
+                                                        />
+                                                        {yr}
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </div>
                                     </div>
-                                    <input type="file" className="hidden" accept=".pdf" onChange={handleFileUpload} />
-                                </label>
+                                )}
                             </div>
 
                             {/* 2. Task Box */}
@@ -333,8 +415,8 @@
                                 </div>
                                 <button 
                                     onClick={runAnalysis} 
-                                    disabled={isLoading || !file}
-                                    className={`w-full mt-8 py-5 rounded-2xl font-black text-sm tracking-widest text-white shadow-xl transition-all shadow-indigo-200 ${isLoading || !file ? 'bg-gray-300' : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95'}`}
+                                    disabled={isLoading || (uploadMode === "pdf" ? !file : !ticker.trim() || selectedYears.length === 0)}
+                                    className={`w-full mt-8 py-5 rounded-2xl font-black text-sm tracking-widest text-white shadow-xl transition-all shadow-indigo-200 ${isLoading || (uploadMode === "pdf" ? !file : !ticker.trim() || selectedYears.length === 0) ? 'bg-gray-300' : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95'}`}
                                 >
                                     {isLoading ? <div className="flex items-center justify-center gap-3"><div className="loader"></div>{t.running}</div> : t.runBtn}
                                 </button>
@@ -410,7 +492,35 @@
 
                                 {result !== "" && (
                                     <div className="prose max-w-none">
-
+                                        {ragasScores && (
+                                            <div className="mt-10 pt-8 border-t border-gray-100">
+                                                <div className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-4">{t.ragasScore}</div>
+                                                <div className="grid grid-cols-3 gap-3">
+                                                    {[
+                                                        {key: "faithfulness", label: "Faithfulness", color: "indigo"},
+                                                        {key: "answer_recall", label: "Answer Recall", color: "emerald"},
+                                                        {key: "relevance", label: "Relevance", color: "violet"}
+                                                    ].map(({key, label, color}) => {
+                                                        const val = ragasScores[key] ?? 0;
+                                                        const pct = Math.round(val * 100);
+                                                        return (
+                                                            <div key={key} className={`bg-${color}-50 border border-${color}-100 rounded-2xl p-4`}>
+                                                                <div className="flex justify-between items-baseline mb-2">
+                                                                    <span className={`text-[9px] font-black uppercase tracking-wider text-${color}-600`}>{label}</span>
+                                                                    <span className={`text-lg font-black text-${color}-700`}>{pct}<span className="text-xs">%</span></span>
+                                                                </div>
+                                                                <div className="h-1.5 bg-white rounded-full overflow-hidden shadow-inner">
+                                                                    <div 
+                                                                        className={`h-full bg-${color}-500 rounded-full transition-all duration-1000`}
+                                                                        style={{width: `${pct}%`}}
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
                                         <div className="mt-16 pt-8 border-t border-gray-100 flex justify-between items-center text-[10px] font-bold text-gray-400 uppercase tracking-tight">
                                             <span>Inference Terminated</span>
                                             <span>Generated by JL Agent on Gemini 2.5 Flash</span>
