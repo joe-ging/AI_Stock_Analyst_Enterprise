@@ -181,12 +181,18 @@ def build_final_prompt(target_query: str, struct_instructions: str, retrieved_co
             f"Structure your analysis to highlight year-over-year changes (YoY), growth/decline patterns, and how the company's narrative has evolved across this timeline.\n"
         )
 
+    title_instruction = (
+        f"TITLE REQUIREMENT: Your report MUST start with a clear Markdown Heading 1 (#) that explicitly includes the target company name and the years being analyzed ({doc_year}). "
+        f"For example: '# Apple Inc. (AAPL) {doc_year} Financial Analysis & Investment Memorandum'.\n"
+    )
+
     citation_instruction = build_citation_instruction(company_name, doc_year)
     return (
         f"{language_instruction}\n\n"
         f"TARGET COMPANY: {company_name} (Year: {doc_year})\n\n"
         f"{target_query}\n\n"
         f"IMPORTANT PROFESSIONAL FINANCIAL REPORTING INSTRUCTIONS:\n"
+        f"{title_instruction}"
         f"{struct_instructions}\n\n"
         f"{multi_year_instruction}"
         f"STRICT FORMAT CONSTRAINTS:\n"
@@ -1186,14 +1192,26 @@ async def query_rag_stream(
             # Build bibliography section (strictly formatted academic references list)
             ref_list = []
             compiled_citations = []
+            
+            source_url = ""
+            if filename_val.startswith("EDGAR:"):
+                extracted_ticker = filename_val.split(":")[1]
+                source_url = f"https://www.sec.gov/edgar/browse/?CIK={extracted_ticker}"
+                
             if unique_pages:
                 ref_list.append("\n\n---\n\n### 📚 CITATIONS / REFERENCES\n")
                 ref_list.append("All citations follow SEC Bluebook citation style (Rule 18 / Rule 21.4).\n\n")
                 for i, p in enumerate(unique_pages, 1):
                     # Use bold numbers and explicit double-newlines to prevent markdown parsers from swallowing list indexes
                     source_line = f"**{i}.** {company_name}, {doc_type}, at Page {p} ({year_str})."
+                    if source_url:
+                        source_line += f" [🔗 View Source]({source_url})"
                     ref_list.append(f"{source_line}\n\n")
-                    compiled_citations.append({"chunk_index": i, "text": source_line})
+                    compiled_citations.append({
+                        "chunk_index": i, 
+                        "text": source_line,
+                        "url": source_url
+                    })
             
             final_report = new_text + "".join(ref_list)
             return final_report, compiled_citations
