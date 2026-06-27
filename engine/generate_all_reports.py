@@ -2,6 +2,11 @@ import asyncio
 import os
 import sys
 
+# Force proxy configuration internally inside Python process to redirect through the 1088 socat gateway
+os.environ["HTTP_PROXY"] = "socks5h://host.docker.internal:1088"
+os.environ["HTTPS_PROXY"] = "socks5h://host.docker.internal:1088"
+os.environ["ALL_PROXY"] = "socks5h://host.docker.internal:1088"
+
 # Change directory context so python can find modules
 sys.path.append("/app")
 
@@ -15,6 +20,7 @@ from main import (
     client
 )
 from pymilvus import connections, Collection
+from google.genai import types
 
 # Ensure config environment variables
 os.environ["DEEPSEEK_API_KEY"] = "sk-8c8956265b5f482bb32c1fc6c8878d72"
@@ -55,27 +61,27 @@ async def generate_all():
         
         async def embed_single(sq: str):
             try:
-                emb_res = await asyncio.to_thread(
-                    client.models.embed_content,
-                    model="gemini-embedding-2",
-                    contents=sq,
-                    config=client.models.embed_content.__code__.co_varnames # Dummy config placeholder or direct call
-                )
-                return emb_res.embeddings[0].values
-            except Exception as e:
-                # Direct fallback or simple call
-                from google.genai import types
+                # Direct SDK call
                 emb_res = client.models.embed_content(
                     model="gemini-embedding-2",
                     contents=sq,
                     config=types.EmbedContentConfig(output_dimensionality=768)
                 )
                 return emb_res.embeddings[0].values
+            except Exception as e:
+                sys.stderr.write(f"Embedding failed for '{sq[:30]}...': {e}\n")
+                sys.stderr.flush()
+                return None
 
         query_vectors = []
         for sq in sub_queries:
             vec = await embed_single(sq)
-            query_vectors.append(vec)
+            if vec is not None:
+                query_vectors.append(vec)
+            
+        if not query_vectors:
+            print("Error: Failed to embed any queries. Aborting this analysis type.")
+            continue
             
         collection = Collection("stock_analysis_chunks")
         collection.load()
