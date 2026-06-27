@@ -499,51 +499,53 @@
                                 )}
 
                                 {result !== "" && (
-                                    <div className="mb-6 flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-2">
-                                        <div className="inline-flex items-center gap-2 bg-indigo-50 border border-indigo-100 text-indigo-700 px-4 py-2 rounded-full text-xs font-bold shadow-sm self-start">
-                                            {t.originalDoc}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {result !== "" && (
-                                    <div className="prose max-w-none animate-in fade-in slide-in-from-bottom-4 duration-1000" dangerouslySetInnerHTML={{ __html: marked.parse(ensureClosedMarkdownTables(result)) }} />
-                                )}
-
-                                {result !== "" && (
-                                    <div className="prose max-w-none mt-10">
-                                        <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">{t.ragasScore}</div>
-                                        <div className="grid grid-cols-3 gap-3">
-                                            {[
-                                                {key: "faithfulness", label: "Faithfulness", style: { bg: "bg-indigo-50", border: "border-indigo-100", text: "text-indigo-600", valText: "text-indigo-700", bar: "bg-indigo-500" }},
-                                                {key: "answer_recall", label: "Answer Recall", style: { bg: "bg-emerald-50", border: "border-emerald-100", text: "text-emerald-600", valText: "text-emerald-700", bar: "bg-emerald-500" }},
-                                                {key: "relevance", label: "Relevance", style: { bg: "bg-violet-50", border: "border-violet-100", text: "text-violet-600", valText: "text-violet-700", bar: "bg-violet-500" }}
-                                            ].map(({key, label, style}) => {
-                                                const val = ragasScores ? (ragasScores[key] ?? 0) : null;
-                                                const pct = val !== null ? Math.round(val * 100) : null;
-                                                return (
-                                                    <div key={key} className={`${style.bg} border ${style.border} rounded-2xl p-4 relative overflow-hidden`}>
-                                                        {pct === null && (
-                                                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent animate-pulse" />
-                                                        )}
-                                                        <div className="flex justify-between items-baseline mb-2">
-                                                            <span className={`text-[9px] font-black uppercase tracking-wider ${style.text}`}>{label}</span>
-                                                            <span className={`text-lg font-black ${style.valText}`}>
-                                                                {pct !== null ? `${pct}%` : <span className="text-xs font-bold text-gray-400 animate-pulse">Auditing...</span>}
-                                                            </span>
-                                                        </div>
-                                                        <div className="h-1.5 bg-white rounded-full overflow-hidden shadow-inner">
-                                                            <div 
-                                                                className={`h-full ${style.bar} rounded-full transition-all duration-1000`}
-                                                                style={{width: `${pct !== null ? pct : 0}%`}}
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
+                                    <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-1000">
+                                        {/* 1. Original Document Header Badge */}
+                                        <div className="flex flex-col gap-3">
+                                            <div className="inline-flex items-center gap-2 bg-indigo-50 border border-indigo-100 text-indigo-700 px-4 py-2 rounded-full text-xs font-bold shadow-sm self-start">
+                                                {t.originalDoc}
+                                            </div>
                                         </div>
 
-                                        <div className="mt-16 pt-8 border-t border-gray-100 flex justify-between items-center text-[10px] font-bold text-gray-400 uppercase tracking-tight">
+                                        {/* 2. Main Markdown Report Body */}
+                                        <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: marked.parse(ensureClosedMarkdownTables(result)) }} />
+
+                                        {/* 3. Ragas Scoring Dashboard Cards */}
+                                        <div className="mt-6 border-t border-gray-100 pt-8">
+                                            <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">{t.ragasScore}</div>
+                                            <div className="grid grid-cols-3 gap-3">
+                                                {[
+                                                    {key: "faithfulness", label: "Faithfulness", style: { bg: "bg-indigo-50", border: "border-indigo-100", text: "text-indigo-600", valText: "text-indigo-700", bar: "bg-indigo-500" }},
+                                                    {key: "answer_recall", label: "Answer Recall", style: { bg: "bg-emerald-50", border: "border-emerald-100", text: "text-emerald-600", valText: "text-emerald-700", bar: "bg-emerald-500" }},
+                                                    {key: "relevance", label: "Relevance", style: { bg: "bg-violet-50", border: "border-violet-100", text: "text-violet-600", valText: "text-violet-700", bar: "bg-violet-500" }}
+                                                ].map(({key, label, style}) => {
+                                                    const val = ragasScores ? (ragasScores[key] ?? 0) : null;
+                                                    const pct = val !== null ? Math.round(val * 100) : null;
+                                                    return (
+                                                        <div key={key} className={`${style.bg} border ${style.border} rounded-2xl p-4 relative overflow-hidden`}>
+                                                            {pct === null && (
+                                                                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent animate-pulse" />
+                                                            )}
+                                                            <div className="flex justify-between items-baseline mb-2">
+                                                                <span className={`text-[9px] font-black uppercase tracking-wider ${style.text}`}>{label}</span>
+                                                                <span className={`text-lg font-black ${style.valText}`}>
+                                                                    {pct !== null ? `${pct}%` : <span className="text-xs font-bold text-gray-400 animate-pulse">Auditing...</span>}
+                                                                </span>
+                                                            </div>
+                                                            <div className="h-1.5 bg-white rounded-full overflow-hidden shadow-inner">
+                                                                <div 
+                                                                    className={`h-full ${style.bar} rounded-full transition-all duration-1000`}
+                                                                    style={{width: `${pct !== null ? pct : 0}%`}}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+
+                                        {/* 4. Inference Terminated Layout Footer */}
+                                        <div className="mt-8 pt-8 border-t border-gray-100 flex justify-between items-center text-[10px] font-bold text-gray-400 uppercase tracking-tight">
                                             <span>Inference Terminated</span>
                                             <span>Generated by JL Agent on Gemini 2.5 Flash</span>
                                         </div>
