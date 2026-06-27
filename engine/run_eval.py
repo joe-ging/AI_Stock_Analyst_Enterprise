@@ -177,9 +177,7 @@ def main():
         })
         
     # Generate Markdown Dashboard Report
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    workspace_dir = os.path.dirname(current_dir)
-    report_path = os.path.join(workspace_dir, "RAG_Quality_Dashboard.md")
+    report_path = os.path.join(os.getcwd(), "RAG_Quality_Dashboard.md")
     
     with open(report_path, "w", encoding="utf-8") as f:
         f.write("# 📊 Enterprise RAG Quality Evaluation Dashboard\n")
