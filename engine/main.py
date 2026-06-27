@@ -196,7 +196,7 @@ def build_audit_prompt(draft: str, retrieved_context: str, target_lang: str, fil
         f"[DRAFT REPORT]:\n{draft}"
     )
 
-client = genai.Client(api_key=API_KEY)
+client = genai.Client(api_key=API_KEY) if API_KEY else None
 
 app = FastAPI()
 
