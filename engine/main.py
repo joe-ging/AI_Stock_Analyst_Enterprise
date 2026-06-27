@@ -352,30 +352,56 @@ async def query_rag(
     target_lang = lang_map.get(language, "English")
     logger.info(f"Router directed query: {analysis_type} | Language: {target_lang}")
 
-    # Node 2: Retriever Node (Milvus Parent-Child Search)
+    # Node 2: Retriever Node (Milvus Parent-Child Search with Query Decomposition)
     logger.info("LangGraph [Retriever Node] executing parent-child similarity search...")
     get_milvus_connection()
     collection = Collection("stock_analysis_chunks")
     
-    # Query vectors matching doc_id
-    search_res = collection.search(
-        data=[query_vector],
-        anns_field="embedding",
-        param={"metric_type": "COSINE", "params": {"ef": 64}},
-        limit=5,
-        expr=f"document_id == {doc_id}",
-        output_fields=["page_number", "parent_text", "child_text"]
-    )
+    # Decompose query into sub-queries to ensure all facets are covered
+    sub_queries = [
+        target_query,
+        "新东方核心教育业务转型与营收业绩表现 东方甄选直播电商与与辉同行剥离",
+        "新东方历史知识产权纠纷 ETS GMAC 侵权诉讼判决与合规政策漏洞",
+        "新东方 PFIC 被动外国投资公司状态 资产测试 收入测试 美国投资者税务影响 长期投资公允价值变动 Level 3 资产减值"
+    ]
     
-    retrieved_items = []
-    if len(search_res) > 0:
-        for match in search_res[0]:
-            retrieved_items.append({
-                "page_number": match.entity.get("page_number"),
-                "parent_text": match.entity.get("parent_text"),
-                "child_text": match.entity.get("child_text")
-            })
+    query_vectors = []
+    for sq in sub_queries:
+        try:
+            emb_res = client.models.embed_content(
+                model="gemini-embedding-2",
+                contents=sq,
+                config=types.EmbedContentConfig(output_dimensionality=768)
+            )
+            query_vectors.append(emb_res.embeddings[0].values)
+        except Exception as e:
+            logger.error(f"Embedding sub-query '{sq}' failed: {e}")
 
+    if not query_vectors:
+        query_vectors = [query_vector]
+        
+    retrieved_items = []
+    seen_parents = set()
+    for q_vec in query_vectors:
+        search_res = collection.search(
+            data=[q_vec],
+            anns_field="embedding",
+            param={"metric_type": "COSINE", "params": {"ef": 64}},
+            limit=3,
+            expr=f"document_id == {doc_id}",
+            output_fields=["page_number", "parent_text", "child_text"]
+        )
+        if len(search_res) > 0:
+            for match in search_res[0]:
+                parent_txt = match.entity.get("parent_text")
+                if parent_txt not in seen_parents:
+                    seen_parents.add(parent_txt)
+                    retrieved_items.append({
+                        "page_number": match.entity.get("page_number"),
+                        "parent_text": parent_txt,
+                        "child_text": match.entity.get("child_text")
+                    })
+    
     # Build RAG context with parent text (keeps table structure and section intact)
     retrieved_context = ""
     citations = []
@@ -405,8 +431,9 @@ async def query_rag(
         f"3. **KEY INVESTMENT RISKS & MITIGATION**: Graded analysis of regulatory, competitive, and operational risks.\n"
         f"4. **VALUATION & CAPITAL STRUCTURE AUDIT**: Deep dive into long-term investments, Level 3 asset valuations, and tax considerations (e.g., PFIC status).\n"
         f"5. **CITATIONS / REFERENCES**: List all footnote citations sequentially.\n\n"
-        f"STRICT CITATION CONSTRAINTS:\n"
+        f"STRICT CITATION CONSTRAINTS (CRITICAL FOR FAITHFULNESS):\n"
         f"- You MUST ONLY use the facts, figures, and page numbers present in the [RETRIEVED DATA] block below. Do NOT use your pre-trained memory or make up page numbers (like Page 33, 67, etc.) that are not in the [RETRIEVED DATA] below.\n"
+        f"- DO NOT introduce any external regulatory codes, custom legal formulas, tax form numbers (like IRS Form 8621), or specific tax rates UNLESS they are explicitly written in the [RETRIEVED DATA] below. If they are not in the text, you must not include them.\n"
         f"- For every financial figure, percentage, rate, date, or specific claim, you MUST append a sequential superscript footnote indicator (e.g., <sup>1</sup>, <sup>2</sup>).\n"
         f"- Format every citation in the 'Citations / References' section exactly as: [Footnote Number] New Oriental Education & Technology Group Inc., Annual Report (Form 20-F) for the Fiscal Year Ended May 31, 2025, at Page [Number] (where [Number] MUST be one of the actual page numbers from the retrieved context below).\n\n"
         f"[RETRIEVED DATA FROM SEC 10-K FILING]:\n{retrieved_context}"
@@ -448,7 +475,8 @@ async def query_rag(
         f"IMPORTANT CITATION AUDIT:\n"
         f"1. Make sure every single number, percentage, and date has a superscript footnote indicator (e.g., <sup>1</sup>, <sup>2</sup>).\n"
         f"2. Validate that NO page numbers other than those in the retrieved context are cited. Correct any hallucinated page numbers.\n"
-        f"3. Ensure the 'Citations / References' section at the end is present, sequential, and formatted exactly as:\n"
+        f"3. Strip out any external tax forms (such as IRS Form 8621), tax rates, or law details that are not explicitly present in the retrieved context to maintain 100% faithfulness.\n"
+        f"4. Ensure the 'Citations / References' section at the end is present, sequential, and formatted exactly as:\n"
         f"   [Footnote Number] New Oriental Education & Technology Group Inc., Annual Report (Form 20-F) for the Fiscal Year Ended May 31, 2025, at Page [Number].\n\n"
         f"Output the final polished report in {target_lang}.\n\n"
         f"[SOURCE CONTEXT]:\n{retrieved_context}\n\n"
