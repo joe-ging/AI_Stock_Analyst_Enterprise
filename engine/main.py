@@ -957,32 +957,12 @@ async def query_rag_stream(
     async def sse_generator() -> AsyncGenerator[str, None]:
         full_text = ""
         
-        if analysis_type == AnalysisType.quick:
-            # Quick mode: stream draft directly, no audit
-            logger.info("[Stream] Quick mode: streaming draft directly...")
-            async for chunk in stream_deepseek(final_prompt):
-                full_text += chunk
-                yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
-        else:
-            # Draft stage: stream to client
-            logger.info("[Stream] Streaming draft generation...")
-            draft_text = ""
-            yield f"data: {json.dumps({'type': 'stage', 'content': 'draft'})}\n\n"
-            async for chunk in stream_deepseek(final_prompt):
-                draft_text += chunk
-                yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
-            
-            # Audit stage: stream the polished version
-            yield f"data: {json.dumps({'type': 'stage', 'content': 'audit'})}\n\n"
-            logger.info("[Stream] Streaming audit & polish...")
-            audit_prompt = build_audit_prompt(draft_text, retrieved_context, target_lang, ctx_filename)
-            async for chunk in stream_deepseek(audit_prompt):
-                full_text += chunk
-                yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+        logger.info("[Stream] Streaming analysis draft directly...")
+        async for chunk in stream_deepseek(final_prompt):
+            full_text += chunk
+            yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
         
         # Cache the final result
-        if not full_text:
-            full_text = draft_text if 'draft_text' in dir() else ""
         output_data = {
             "analysis": full_text,
             "citations": citations,
