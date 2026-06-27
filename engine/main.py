@@ -84,7 +84,7 @@ REPORT_TEMPLATES = {
             "   - **Table C: Cash Flow Audit**: Net cash provided by operating activities, Net cash used in investing activities, and Net cash used in financing activities.\n"
             "4. **VALUATION, LEVEL 3 ASSETS & CAPITAL STRUCTURE AUDIT**: Audit the valuation methodologies (e.g., DCF model inputs, comparable multiples), unobservable inputs for Level 3 assets, and critical tax considerations (specifically PFIC classification status and cross-border tax treatment).\n"
             "5. **KEY INVESTMENT RISKS & MITIGATION MATRIX**: Provide a graded matrix table (High/Medium/Low impact) evaluating regulatory, geopolitical, competitive, and operational risks alongside specific mitigation factors.\n"
-            "6. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
+            "6. **CITATIONS / REFERENCES**: List all footnote citations sequentially. Each citation MUST strictly follow the SEC Bluebook citation style (Rule 18 / Rule 21.4) (e.g., '[Company Name], Form 20-F, at [Page Number] (FY[Year]).' like: 'New Oriental Education & Technology Group Inc., Form 20-F, at 15 (FY2025).'). Do not use generic filenames."
         ),
         "struct": (
             "You are a Lead Equity Research Analyst preparing an institutional-grade investment memorandum for executive leadership and the investment committee. "
@@ -95,7 +95,7 @@ REPORT_TEMPLATES = {
             "3. **FINANCIAL PERFORMANCE & CASH FLOW AUDIT**: Audit margins, leverage, and free cash flow trends.\n"
             "4. **VALUATION, LEVEL 3 ASSETS & CAPITAL STRUCTURE AUDIT**: Valuation model assumptions (DCF/comps), Level 3 assets unobservable inputs, and PFIC tax status analysis.\n"
             "5. **KEY INVESTMENT RISKS & MITIGATION MATRIX**: Graded table (High/Medium/Low) of regulatory, geopolitical, and business risks and mitigations.\n"
-            "6. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
+            "6. **CITATIONS / REFERENCES**: List all footnote citations sequentially, strictly following the SEC Bluebook citation style (Rule 18 / Rule 21.4)."
         )
     },
     "compliance": {
@@ -107,7 +107,7 @@ REPORT_TEMPLATES = {
             "2. **REGULATORY POLICY & SHIFT IMPACTS**: Detailed audit of the PCAOB audit inspection history, HFCAA compliance, data cross-border transfers (e.g., CAC filings), and Generative AI service regulatory compliance requirements.\n"
             "3. **LITIGATION, INTELLECTUAL PROPERTY & AUDIT GAPS**: Comprehensive analysis of copyrights/trademark disputes, historical administrative fines, material litigations, and control gaps in contract compliance.\n"
             "4. **VIE STRUCTURE, TAX COMPLIANCE & PFIC DISCLOSURE**: Audit of Variable Interest Entity (VIE) regulatory validity, foreign exchange repatriation rules, PFIC (Passive Foreign Investment Company) status tests, and U.S. federal income tax implications.\n"
-            "5. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
+            "5. **CITATIONS / REFERENCES**: List all footnote citations sequentially. Each citation MUST strictly follow the SEC Bluebook citation style (Rule 18 / Rule 21.4) (e.g., '[Company Name], Form 20-F, at [Page Number] (FY[Year]).' like: 'New Oriental Education & Technology Group Inc., Form 20-F, at 15 (FY2025).'). Do not use generic filenames."
         ),
         "struct": (
             "You are a Chief Compliance Officer preparing a regulatory audit report for the Board of Directors and the Audit Committee. "
@@ -603,7 +603,8 @@ async def query_rag(
     target_query = template["query"]
     
     # Embed the query to check cache
-    query_vector = await get_embedding(target_query)
+    cache_query_key = f"Language: {language.value} | Query: {target_query}"
+    query_vector = await get_embedding(cache_query_key)
     if not query_vector:
         raise HTTPException(status_code=500, detail="Embedding calculation error")
 
@@ -822,7 +823,8 @@ async def _build_rag_context(filename: str, analysis_type: str, language: str):
         raise HTTPException(status_code=400, detail=f"Invalid analysis_type: {analysis_type}")
     target_query = template["query"]
     logger.info(f"[DEBUG] _build_rag_context: Query template found, embedding query text: {target_query[:60]}...")
-    query_vector = await get_embedding(target_query)
+    cache_query_key = f"Language: {language} | Query: {target_query}"
+    query_vector = await get_embedding(cache_query_key)
     if not query_vector:
         raise HTTPException(status_code=500, detail="Failed to generate embedding for query")
         
