@@ -220,7 +220,7 @@ async def call_deepseek_async(prompt: str, model: str = "deepseek-chat") -> str:
         "temperature": 0.2
     }
     
-    async with httpx.AsyncClient(timeout=120.0, trust_env=False) as cl:
+    async with httpx.AsyncClient(timeout=120.0) as cl:
         response = await cl.post(url, headers=headers, json=payload)
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"]
@@ -242,7 +242,7 @@ async def stream_deepseek(prompt: str, model: str = "deepseek-chat") -> AsyncGen
         "stream": True
     }
     
-    async with httpx.AsyncClient(timeout=120.0, trust_env=False) as cl:
+    async with httpx.AsyncClient(timeout=120.0) as cl:
         async with cl.stream("POST", url, headers=headers, json=payload) as response:
             response.raise_for_status()
             async for line in response.aiter_lines():
