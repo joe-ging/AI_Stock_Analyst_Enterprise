@@ -507,7 +507,7 @@
 
                                 {result !== "" && (
                                     <div className="mb-8 inline-flex items-center gap-2 bg-indigo-50 border border-indigo-100 text-indigo-700 px-4 py-2 rounded-full text-xs font-bold shadow-sm animate-in fade-in slide-in-from-bottom-2">
-                                        {t.originalDoc}
+                                        {uploadMode === 'pdf' ? t.originalDoc : "📄 Source: SEC EDGAR Database"}
                                     </div>
                                 )}
 

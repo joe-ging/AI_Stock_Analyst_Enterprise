@@ -652,12 +652,12 @@ async def query_rag(
                 if cached_data:
                     logger.info(f"Semantic Cache HIT (Score: {similarity:.4f}) for key: {matched_key}")
                     result = json.loads(cached_data.decode("utf-8"))
-                    if result.get("language") == language.value:
+                    if result.get("language") == language.value and result.get("doc_year") == db_doc_year and result.get("company_name") == db_company_name:
                         result["cache_hit"] = True
                         result["inference_time_ms"] = int((time.time() - start_time) * 1000)
                         return result
                     else:
-                        logger.info(f"Cache language mismatch: requested {language.value}, cached {result.get('language')}. Forcing miss.")
+                        logger.info(f"Cache mismatch: requested {db_doc_year}, cached {result.get('doc_year')}. Forcing miss.")
             except Exception as e:
                 logger.error(f"Redis cache fetch failed: {e}")
 
@@ -807,7 +807,9 @@ async def query_rag(
         "retrieved_context": retrieved_context,
         "cache_hit": False,
         "language": language.value,
-        "inference_time_ms": int((time.time() - start_time) * 1000)
+        "inference_time_ms": int((time.time() - start_time) * 1000),
+        "doc_year": db_doc_year,
+        "company_name": db_company_name
     }
     
     new_cache_key = f"analysis_cache_store:{uuid.uuid4()}"
@@ -946,10 +948,10 @@ async def _build_rag_context(filename: str, analysis_type: str, language: str):
             if cached_data:
                 try:
                     cached_json = json.loads(cached_data.decode("utf-8") if isinstance(cached_data, bytes) else cached_data)
-                    if cached_json.get("language") == language:
+                    if cached_json.get("language") == language and cached_json.get("doc_year") == db_doc_year and cached_json.get("company_name") == db_company_name:
                         return None  # Signal: cache hit only if language matches
                     else:
-                        logger.info(f"[Cache] Language mismatch (cached={cached_json.get('language')}, requested={language}). Forcing regeneration.")
+                        logger.info(f"[Cache] Mismatch (cached={cached_json.get('doc_year')}, requested={db_doc_year}). Forcing regeneration.")
                 except Exception as e:
                     logger.error(f"[Cache] Failed to parse cached data: {e}")
         cur.close()
@@ -1193,7 +1195,9 @@ async def query_rag_stream(
             "cache_hit": False,
             "language": language.value,
             "inference_time_ms": int((time.time() - start_time) * 1000),
-            "ragas_scores": ragas_scores
+            "ragas_scores": ragas_scores,
+            "doc_year": db_doc_year,
+            "company_name": db_company_name
         }
         new_cache_key = f"analysis_cache_store:{uuid.uuid4()}"
         if redis_client:
