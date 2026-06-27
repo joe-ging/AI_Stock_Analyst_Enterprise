@@ -590,7 +590,8 @@ async def query_rag(
         payload = {
             "content": {
                 "parts": [{"text": sq}]
-            }
+            },
+            "outputDimensionality": 768
         }
         
         def _sync_embed():
@@ -761,7 +762,8 @@ async def _build_rag_context(filename: str, analysis_type: str, language: str):
     payload = {
         "content": {
             "parts": [{"text": target_query}]
-        }
+        },
+        "outputDimensionality": 768
     }
     
     logger.info("[DEBUG] Requesting Gemini Embedding via standard REST API (requests)...")
