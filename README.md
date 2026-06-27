@@ -25,8 +25,8 @@ Our system is decoupled into specialized microservices, avoiding monolithic bott
   - **Milvus (Standalone)**: High-dimensional vector storage.
   - **Redis**: In-memory semantic caching and task state management.
 - **AI Models & Orchestration**: 
-  - **Generation**: DeepSeek-Chat (Primary) / Gemini 2.5 Pro (Fallback).
-  - **Embeddings**: OpenAINext (`text-embedding-3-small`) / Gemini Embeddings.
+  - **Generation (Inference)**: DeepSeek-Chat (Primary) / Gemini 2.5 Pro (Fallback).
+  - **Embeddings**: DeepSeek does not natively support embeddings. Thus, we utilize **OpenAINext (`text-embedding-3-small`)** as the primary vectorization model, with Gemini Embeddings serving as the highly-available fallback.
   - **Orchestration**: Custom LangChain-style async pipelines with LangGraph-inspired routing loops.
 
 ---
@@ -94,13 +94,18 @@ Due to Gemini API's strict regional blocking in Hong Kong, the initial architect
 
 ---
 
-## 🔹 4. Database Optimization & Semantic Caching
+## 🔹 4. Polyglot Persistence (Database Optimization)
 
-We utilize a combination of databases, each optimized for its specific domain:
+We utilize a combination of purpose-built databases (**Polyglot Persistence**) rather than forcing a single monolith DB to handle all workloads. This prevents locking and ensures specific bottlenecks are handled optimally:
 
-1. **Redis (Semantic Intercept)**: Before querying Milvus, the Engine computes the cosine similarity of user queries against previous requests in Redis. If similarity is > 0.97, the API bypasses the Vector DB and LLM layers entirely, delivering a 0ms response and saving 100% of Token costs.
-2. **PostgreSQL Tuning**: Implemented **PgBouncer** to prevent connection exhaustion. High-frequency queries are backed by B-Tree indexing (verified via `EXPLAIN ANALYZE`), and continuous slow-query monitoring is enabled.
-3. **Milvus**: Stores chunked document vectors for rapid hybrid similarity search.
+1. **Redis (In-Memory Key-Value & Cache)**: 
+   - *Role*: Semantic caching and Celery message broker backend.
+   - *Optimization*: Before querying Milvus, the Engine computes the cosine similarity of user queries against previous requests. If similarity is > 0.97, the API bypasses the Vector DB and LLM layers entirely, delivering a 0ms response and saving 100% of Token costs.
+2. **PostgreSQL (ACID Relational Database)**: 
+   - *Role*: Stores document metadata, chunk mapping, and ingestion status. Chosen over NoSQL for strict ACID transactional guarantees when tracking document state.
+   - *Optimization*: Implemented **PgBouncer** connection pooling to prevent connection exhaustion under high concurrency. High-frequency queries are backed by B-Tree indexing (verified via `EXPLAIN ANALYZE`), and continuous slow-query monitoring is enabled.
+3. **Milvus (High-Dimensional Vector Store)**: 
+   - *Role*: Stores and searches chunked dense vectors. Chosen over `pgvector` because standalone Milvus scales infinitely better for millions of high-dimensional SEC document chunks, supporting advanced ANN indexing.
 
 ```mermaid
 sequenceDiagram
@@ -149,7 +154,11 @@ graph TD
 
 The system runs on a containerized environment deployed via automated CI/CD pipelines.
 
-- **GitOps Pipeline**: GitHub Actions trigger `pytest` integration tests to validate RAG retrieval logic.
+- **GitOps & Automated Deployment**: 
+  1. Developers `git push` to the `main` branch.
+  2. **GitHub Actions** automatically trigger `pytest` integration tests to validate RAG retrieval logic.
+  3. Upon success, the pipeline builds the Docker images and pushes them to the **Tencent Container Registry (TCR)** or Docker Hub.
+  4. The remote server automatically pulls the latest images and executes the deployment script.
 - **Zero-Downtime Hot Reloads**: The custom `deploy.sh` script applies rolling updates specifically to stateless containers (`gateway`, `engine`), intentionally preserving stateful volumes (`postgres`, `milvus`, `redis`) to prevent enterprise data corruption.
 
 ---
