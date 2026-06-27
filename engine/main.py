@@ -845,8 +845,10 @@ async def ingest_edgar_on_the_fly(filename: str):
     if not valid_years:
         raise HTTPException(status_code=404, detail=f"No SEC EDGAR filings found for {ticker} in years {years}")
     
-    target_year = valid_years[0]
-    chunks = results[target_year]
+    target_year = ",".join(valid_years)
+    chunks = []
+    for y in valid_years:
+        chunks.extend(results[y])
     
     conn = get_db_connection()
     cur = conn.cursor()
