@@ -502,26 +502,26 @@
                                         <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">{t.ragasScore}</div>
                                         <div className="grid grid-cols-3 gap-3">
                                             {[
-                                                {key: "faithfulness", label: "Faithfulness", color: "indigo"},
-                                                {key: "answer_recall", label: "Answer Recall", color: "emerald"},
-                                                {key: "relevance", label: "Relevance", color: "violet"}
-                                            ].map(({key, label, color}) => {
+                                                {key: "faithfulness", label: "Faithfulness", color: "indigo", style: { bg: "bg-indigo-50", border: "border-indigo-100", text: "text-indigo-600", valText: "text-indigo-700", bar: "bg-indigo-500" }},
+                                                {key: "answer_recall", label: "Answer Recall", color: "emerald", style: { bg: "bg-emerald-50", border: "border-emerald-100", text: "text-emerald-600", valText: "text-emerald-700", bar: "bg-emerald-500" }},
+                                                {key: "relevance", label: "Relevance", color: "violet", style: { bg: "bg-violet-50", border: "border-violet-100", text: "text-violet-600", valText: "text-violet-700", bar: "bg-violet-500" }}
+                                            ].map(({key, label, style}) => {
                                                 const val = ragasScores ? (ragasScores[key] ?? 0) : null;
                                                 const pct = val !== null ? Math.round(val * 100) : null;
                                                 return (
-                                                    <div key={key} className={`bg-${color}-50 border border-${color}-100 rounded-2xl p-4 relative overflow-hidden`}>
+                                                    <div key={key} className={`${style.bg} border ${style.border} rounded-2xl p-4 relative overflow-hidden`}>
                                                         {pct === null && (
                                                             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent animate-pulse" />
                                                         )}
                                                         <div className="flex justify-between items-baseline mb-2">
-                                                            <span className={`text-[9px] font-black uppercase tracking-wider text-${color}-600`}>{label}</span>
-                                                            <span className={`text-lg font-black text-${color}-700`}>
+                                                            <span className={`text-[9px] font-black uppercase tracking-wider ${style.text}`}>{label}</span>
+                                                            <span className={`text-lg font-black ${style.valText}`}>
                                                                 {pct !== null ? `${pct}%` : <span className="text-xs font-bold text-gray-400 animate-pulse">Auditing...</span>}
                                                             </span>
                                                         </div>
                                                         <div className="h-1.5 bg-white rounded-full overflow-hidden shadow-inner">
                                                             <div 
-                                                                className={`h-full bg-${color}-500 rounded-full transition-all duration-1000`}
+                                                                className={`h-full ${style.bar} rounded-full transition-all duration-1000`}
                                                                 style={{width: `${pct !== null ? pct : 0}%`}}
                                                             />
                                                         </div>
