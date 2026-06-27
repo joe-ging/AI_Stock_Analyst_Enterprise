@@ -382,28 +382,35 @@ async def query_rag(
         f"[RETRIEVED DATA FROM SEC 10-K FILING]:\n{retrieved_context}"
     )
 
-    # Initial Draft by Gemini 2.5 Flash with DeepSeek fallback
-    try:
+    # Initial Draft by DeepSeek (deepseek-chat) with Gemini fallback
+    draft_result = None
+    if DEEPSEEK_API_KEY:
+        try:
+            logger.info("Generating initial draft using DeepSeek Chat...")
+            draft_result = call_deepseek(final_prompt, model="deepseek-chat")
+        except Exception as ds_err:
+            logger.warning(f"DeepSeek Chat draft generation failed: {ds_err}. Falling back to Gemini 2.5 Flash...")
+            if API_KEY:
+                try:
+                    response = client.models.generate_content(
+                        model="gemini-2.5-flash",
+                        contents=final_prompt
+                    )
+                    draft_result = response.text
+                except Exception as gemini_err:
+                    logger.error(f"Gemini draft fallback also failed: {gemini_err}")
+                    raise ds_err
+            else:
+                raise ds_err
+    else:
         logger.info("Generating initial draft using Gemini 2.5 Flash...")
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=final_prompt
         )
         draft_result = response.text
-    except Exception as gemini_err:
-        logger.warning(f"Gemini 2.5 Flash generation failed: {gemini_err}")
-        if DEEPSEEK_API_KEY:
-            logger.info("Falling back to DeepSeek (deepseek-chat) for draft generation...")
-            try:
-                draft_result = call_deepseek(final_prompt, model="deepseek-chat")
-            except Exception as ds_err:
-                logger.error(f"DeepSeek fallback also failed: {ds_err}")
-                raise gemini_err
-        else:
-            raise gemini_err
     
-    # Audit & Final Polish by Gemini 2.5 Pro (Model Cascade) with DeepSeek fallback
-    logger.info("Cascading to Gemini 2.5 Pro for Auditor sanity check & factual verification...")
+    # Audit & Final Polish by DeepSeek (deepseek-chat) with Gemini fallback
     audit_prompt = (
         f"You are a Senior Financial Audit Agent. Review the following draft report against the original source context. "
         f"Ensure that all dates, financial numbers (revenue, net income, etc.) and page references match the source exactly. "
@@ -412,23 +419,32 @@ async def query_rag(
         f"[DRAFT REPORT]:\n{draft_result}"
     )
     
-    try:
+    final_report = None
+    if DEEPSEEK_API_KEY:
+        try:
+            logger.info("Performing audit & polish using DeepSeek Chat...")
+            final_report = call_deepseek(audit_prompt, model="deepseek-chat")
+        except Exception as ds_err:
+            logger.warning(f"DeepSeek Chat audit failed: {ds_err}. Falling back to Gemini 2.5 Pro...")
+            if API_KEY:
+                try:
+                    pro_response = client.models.generate_content(
+                        model="gemini-2.5-pro",
+                        contents=audit_prompt
+                    )
+                    final_report = pro_response.text
+                except Exception as gemini_err:
+                    logger.error(f"Gemini audit fallback also failed: {gemini_err}")
+                    raise ds_err
+            else:
+                raise ds_err
+    else:
+        logger.info("Cascading to Gemini 2.5 Pro for Auditor sanity check & factual verification...")
         pro_response = client.models.generate_content(
             model="gemini-2.5-pro",
             contents=audit_prompt
         )
         final_report = pro_response.text
-    except Exception as gemini_err:
-        logger.warning(f"Gemini 2.5 Pro generation failed: {gemini_err}")
-        if DEEPSEEK_API_KEY:
-            logger.info("Falling back to DeepSeek (deepseek-chat) for audit & polish...")
-            try:
-                final_report = call_deepseek(audit_prompt, model="deepseek-chat")
-            except Exception as ds_err:
-                logger.error(f"DeepSeek audit fallback also failed: {ds_err}")
-                raise gemini_err
-        else:
-            raise gemini_err
     
     logger.info("LangGraph agent loop successfully completed.")
 

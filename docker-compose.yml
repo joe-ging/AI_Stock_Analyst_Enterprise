@@ -88,7 +88,7 @@ services:
       - HTTP_PROXY=socks5h://host.docker.internal:1080
       - HTTPS_PROXY=socks5h://host.docker.internal:1080
       - ALL_PROXY=socks5h://host.docker.internal:1080
-      - NO_PROXY=localhost,127.0.0.1,db,engine,gateway,cache,rabbitmq,etcd,minio,milvus
+      - NO_PROXY=localhost,127.0.0.1,db,engine,gateway,cache,rabbitmq,etcd,minio,milvus,api.deepseek.com
     ports:
       - "8001:8001"
     extra_hosts:
@@ -121,7 +121,7 @@ services:
       - HTTP_PROXY=socks5h://host.docker.internal:1080
       - HTTPS_PROXY=socks5h://host.docker.internal:1080
       - ALL_PROXY=socks5h://host.docker.internal:1080
-      - NO_PROXY=localhost,127.0.0.1,db,engine,gateway,cache,rabbitmq,etcd,minio,milvus
+      - NO_PROXY=localhost,127.0.0.1,db,engine,gateway,cache,rabbitmq,etcd,minio,milvus,api.deepseek.com
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
