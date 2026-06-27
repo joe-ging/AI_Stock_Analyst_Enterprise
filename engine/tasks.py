@@ -196,7 +196,7 @@ def ingest_pdf_task(filename: str, doc_id: int):
     logger.info(f"Generated {len(chunks_with_metadata)} parent-child chunks from {filename}")
 
     # 3. Generate Embeddings batch-by-batch
-    batch_size = 15
+    batch_size = 500 if EMBEDDING_PROVIDER == "openainext" else 15
     embeddings_list = []
     texts = [item["child_text"] for item in chunks_with_metadata]
     
