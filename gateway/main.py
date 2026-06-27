@@ -145,6 +145,8 @@ async def analyze_document_stream(
                             
                         # Send done event
                         yield f"data: {json.dumps({'type': 'done', 'citations': citations_data, 'inference_time_ms': inf_time, 'cache_hit': True})}\n\n"
+                        await asyncio.sleep(0.5)
+                        return
                     else:
                         error_text = await cached_resp.aread()
                         yield f"data: {json.dumps({'type': 'error', 'content': f'Cache retrieval failed (status={cached_resp.status_code}): {error_text.decode()}'})}\n\n"
