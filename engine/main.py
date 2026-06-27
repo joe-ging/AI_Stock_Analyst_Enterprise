@@ -608,6 +608,32 @@ async def ingest_document(file: UploadFile = File(...)):
     logger.info(f"Document ingestion completely successful: {file.filename}")
     return {"status": "success", "document_id": doc_id, "chunks_count": res.get("chunks_count")}
 
+async def normalize_ticker_via_llm(raw_ticker: str) -> str:
+    """Uses LLM to resolve a free-form company name to its US stock ticker."""
+    raw_ticker = raw_ticker.strip()
+    import re
+    # Fast path: if it's already a standard 1-5 letter ticker in all caps, skip LLM
+    if re.match(r'^[A-Z]{1,5}$', raw_ticker):
+        return raw_ticker
+
+    logger.info(f"[Ticker Resolution] Resolving free-form input '{raw_ticker}' via LLM...")
+    prompt = (
+        f"You are a financial assistant. The user provided a stock or company name: '{raw_ticker}'. "
+        "Your task is to identify the primary US stock ticker symbol for this company. "
+        "If it is a Chinese or Hong Kong company, return its US ADR ticker (e.g., Alibaba -> BABA, 有道 -> DAO, 腾讯 -> TCEHY). "
+        "Return ONLY the ticker symbol in uppercase, with no other text, punctuation, or explanation. "
+        "If you cannot determine the ticker, just return the user's input in uppercase."
+    )
+    result = ""
+    async for chunk in stream_deepseek(prompt):
+        result += chunk
+        
+    cleaned = result.strip().upper()
+    cleaned = cleaned.replace("`", "").strip()
+    cleaned = cleaned.split()[0] if cleaned else raw_ticker.upper()
+    logger.info(f"[Ticker Resolution] Resolved '{raw_ticker}' -> '{cleaned}'")
+    return cleaned
+
 @app.post("/query")
 async def query_rag(
     filename: str = Form(...),
@@ -619,6 +645,12 @@ async def query_rag(
         raise HTTPException(status_code=500, detail="OpenAINext API Key missing on Engine")
     elif EMBEDDING_PROVIDER == "gemini" and not API_KEY:
         raise HTTPException(status_code=500, detail="Gemini API Key missing on Engine")
+
+    if filename.startswith("EDGAR:"):
+        parts = filename.split(":")
+        ticker = parts[1]
+        normalized_ticker = await normalize_ticker_via_llm(ticker)
+        filename = f"EDGAR:{normalized_ticker}:{parts[2]}"
 
     start_time = time.time()
     cache_uuid = None
@@ -1100,6 +1132,12 @@ async def query_rag_stream(
     """Streaming SSE endpoint — tokens are pushed to client as they are generated"""
     if not DEEPSEEK_API_KEY:
         raise HTTPException(status_code=500, detail="Streaming requires DeepSeek API Key")
+        
+    if filename.startswith("EDGAR:"):
+        parts = filename.split(":")
+        ticker = parts[1]
+        normalized_ticker = await normalize_ticker_via_llm(ticker)
+        filename = f"EDGAR:{normalized_ticker}:{parts[2]}"
     
     start_time = time.time()
     logger.info(f"[DEBUG] query_rag_stream: Endpoint hit for {filename}. Building RAG context...")
