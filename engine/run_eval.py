@@ -161,9 +161,11 @@ def main():
             continue
             
         answer = res_data.get("analysis", "")
-        # Retrieve context from citations
-        citations = res_data.get("citations", [])
-        context = "\n".join([c.get("text", "") for c in citations])
+        # Retrieve context from retrieved_context, fallback to citations if not present
+        context = res_data.get("retrieved_context", "")
+        if not context:
+            citations = res_data.get("citations", [])
+            context = "\n".join([c.get("text", "") for c in citations])
         
         # Score metrics
         faithfulness = evaluate_faithfulness(context, answer)

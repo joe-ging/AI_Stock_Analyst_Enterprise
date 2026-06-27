@@ -516,6 +516,7 @@ async def query_rag(
     output_data = {
         "analysis": final_report,
         "citations": citations,
+        "retrieved_context": retrieved_context,
         "cache_hit": False,
         "inference_time_ms": int((time.time() - start_time) * 1000)
     }
