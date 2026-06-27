@@ -37,7 +37,7 @@ async def serve_index():
 async def health():
     # Ping the engine service
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(trust_env=False) as client:
             resp = await client.get(f"{ENGINE_URL}/health")
             engine_status = resp.json() if resp.status_code == 200 else f"error_code_{resp.status_code}"
     except Exception as e:
@@ -56,7 +56,7 @@ async def analyze_document(
 ):
     logger.info(f"Gateway received request: {file.filename} | Type: {analysis_type} | Lang: {language}")
 
-    async with httpx.AsyncClient(timeout=600.0) as client:
+    async with httpx.AsyncClient(timeout=600.0, trust_env=False) as client:
         # Step 1: Forward file to engine for RAG ingestion
         try:
             file_bytes = await file.read()
@@ -108,7 +108,7 @@ async def analyze_document_stream(
     logger.info(f"Gateway streaming request: {file.filename} | Type: {analysis_type} | Lang: {language}")
 
     # Step 1: Ingest (non-streaming, must complete first)
-    async with httpx.AsyncClient(timeout=600.0) as client:
+    async with httpx.AsyncClient(timeout=600.0, trust_env=False) as client:
         try:
             file_bytes = await file.read()
             files = {"file": (file.filename, file_bytes, file.content_type)}
@@ -121,7 +121,7 @@ async def analyze_document_stream(
 
     # Step 2: Stream from Engine's /query/stream endpoint
     async def stream_passthrough():
-        async with httpx.AsyncClient(timeout=600.0) as client:
+        async with httpx.AsyncClient(timeout=600.0, trust_env=False) as client:
             query_data = {"filename": file.filename, "analysis_type": analysis_type, "language": language}
             async with client.stream("POST", f"{ENGINE_URL}/query/stream", data=query_data) as resp:
                 if resp.status_code != 200:
