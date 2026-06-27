@@ -174,25 +174,25 @@
                         done = readerDone;
                         if (value) {
                             const chunk = decoder.decode(value, { stream: true });
-                            // Parse SSE format: data: {"token": "..."}
+                            // Split incoming data into lines
                             const lines = chunk.split("\n");
                             for (const line of lines) {
-                                if (line.startsWith("data: ")) {
+                                const trimmed = line.trim();
+                                if (trimmed.startsWith("data: ")) {
                                     try {
-                                        const parsed = JSON.parse(line.slice(6));
-                                        if (parsed.token) {
-                                            fullText += parsed.token;
+                                        const rawJson = trimmed.slice(6);
+                                        const parsed = JSON.parse(rawJson);
+                                        
+                                        if (parsed.type === "token" && parsed.content) {
+                                            fullText += parsed.content;
                                             setResult(fullText);
-                                        }
-                                        if (parsed.citations) {
-                                            setCitations(parsed.citations);
-                                        }
-                                        if (parsed.inference_time_ms) {
-                                            setInferenceTime(parsed.inference_time_ms);
-                                            setCacheHit(parsed.cache_hit);
+                                        } else if (parsed.type === "done") {
+                                            if (parsed.citations) setCitations(parsed.citations);
+                                            if (parsed.inference_time_ms) setInferenceTime(parsed.inference_time_ms);
+                                            setCacheHit(false);
                                         }
                                     } catch (e) {
-                                        // Silent catch for partial chunk JSON parse errors
+                                        // Ignore partial JSON parse errors
                                     }
                                 }
                             }

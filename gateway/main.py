@@ -124,9 +124,30 @@ async def analyze_document_stream(
         async with httpx.AsyncClient(timeout=600.0, trust_env=False) as client:
             query_data = {"filename": file.filename, "analysis_type": analysis_type, "language": language}
             async with client.stream("POST", f"{ENGINE_URL}/query/stream", data=query_data) as resp:
+                if resp.status_code == 307:
+                    # Cache hit! Engine redirected. Let's fetch the cached result instantly.
+                    logger.info("Redirect detected (Cache Hit). Fetching cache directly...")
+                    cached_resp = await client.post(f"{ENGINE_URL}/query", data=query_data)
+                    if cached_resp.status_code == 200:
+                        cached_json = cached_resp.json()
+                        analysis_text = cached_json.get("analysis", "")
+                        citations_data = cached_json.get("citations", [])
+                        inf_time = cached_json.get("inference_time_ms", 0)
+                        
+                        # Chunk analysis text for soft streaming effect
+                        chunk_size = 50
+                        for idx in range(0, len(analysis_text), chunk_size):
+                            token_chunk = analysis_text[idx:idx+chunk_size]
+                            yield f"data: {json.dumps({'type': 'token', 'content': token_chunk})}\n\n"
+                            await asyncio.sleep(0.01)
+                            
+                        # Send done event
+                        yield f"data: {json.dumps({'type': 'done', 'citations': citations_data, 'inference_time_ms': inf_time, 'cache_hit': True})}\n\n"
+                        return
+
                 if resp.status_code != 200:
                     error_body = await resp.aread()
-                    yield f"data: {error_body.decode()}\\n\\n"
+                    yield f"data: {json.dumps({'type': 'error', 'content': error_body.decode()})}\n\n"
                     return
                 async for line in resp.aiter_lines():
                     if line:
