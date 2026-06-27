@@ -378,7 +378,11 @@ async def query_rag(
     final_prompt = (
         f"{language_instruction}\n\n"
         f"{target_query}\n\n"
-        f"IMPORTANT: You MUST base your analysis strictly on the retrieved context. Cite actual page numbers from the context when referring to statistics. Use actual fiscal years (current year is 2026).\n\n"
+        f"IMPORTANT CITATION REQUIREMENTS:\n"
+        f"1. For every single financial figure, amount, rate, date, or key statistic you mention, you MUST append a sequential superscript footnote number (e.g. <sup>1</sup>, <sup>2</sup>).\n"
+        f"2. At the very end of the report, you MUST add a 'Citations / References' section listing the sources for all footnotes in the following classic corporate finance citation format:\n"
+        f"   [Footnote Number] New Oriental Education & Technology Group Inc., Annual Report (Form 20-F) for the Fiscal Year Ended May 31, 2025, at [Page Number].\n"
+        f"3. You MUST base your analysis strictly on the retrieved context. Use actual fiscal years (current year is 2026).\n\n"
         f"[RETRIEVED DATA FROM SEC 10-K FILING]:\n{retrieved_context}"
     )
 
@@ -414,7 +418,12 @@ async def query_rag(
     audit_prompt = (
         f"You are a Senior Financial Audit Agent. Review the following draft report against the original source context. "
         f"Ensure that all dates, financial numbers (revenue, net income, etc.) and page references match the source exactly. "
-        f"Correct any misstatements or formatting gaps, and output the final polished report in {target_lang}.\n\n"
+        f"Correct any misstatements or formatting gaps.\n\n"
+        f"IMPORTANT CITATION AUDIT:\n"
+        f"1. Make sure every mentioned number or metric has a superscript footnote indicator (e.g. <sup>1</sup>, <sup>2</sup>).\n"
+        f"2. Ensure the 'Citations / References' section at the end is present and formatted exactly as:\n"
+        f"   [Footnote Number] New Oriental Education & Technology Group Inc., Annual Report (Form 20-F) for the Fiscal Year Ended May 31, 2025, at [Page Number].\n\n"
+        f"Output the final polished report in {target_lang}.\n\n"
         f"[SOURCE CONTEXT]:\n{retrieved_context}\n\n"
         f"[DRAFT REPORT]:\n{draft_result}"
     )
