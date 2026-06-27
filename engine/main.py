@@ -990,6 +990,25 @@ async def query_rag_stream(
                 
             new_text += text[last_idx:]
             
+            # Dynamically resolve company name, form type and year based on filename_val
+            comp_lower = filename_val.lower()
+            company_name = "New Oriental Education & Technology Group Inc."
+            doc_type = "Form 20-F"
+            year_str = "FY2025"
+            
+            if "tencent" in comp_lower or "tcehy" in comp_lower:
+                company_name = "Tencent Holdings Limited"
+                doc_type = "Annual Report"
+                year_str = "FY2024"
+            elif "baba" in comp_lower or "alibaba" in comp_lower:
+                company_name = "Alibaba Group Holding Limited"
+                doc_type = "Form 20-F"
+                year_str = "FY2024"
+            elif "edu" in comp_lower:
+                company_name = "New Oriental Education & Technology Group Inc."
+                doc_type = "Form 20-F"
+                year_str = "FY2025"
+            
             # Build bibliography section (strictly formatted academic references list)
             ref_list = []
             compiled_citations = []
@@ -997,8 +1016,9 @@ async def query_rag_stream(
                 ref_list.append("\n\n---\n\n### 📚 CITATIONS / REFERENCES\n")
                 ref_list.append("All citations follow SEC Bluebook citation style (Rule 18 / Rule 21.4).\n\n")
                 for i, p in enumerate(unique_pages, 1):
-                    source_line = f"{i}. New Oriental Education & Technology Group Inc., Form 20-F, at Page {p} (FY2025)."
-                    ref_list.append(f"{source_line}\n")
+                    # Use bold numbers and explicit double-newlines to prevent markdown parsers from swallowing list indexes
+                    source_line = f"**{i}.** {company_name}, {doc_type}, at Page {p} ({year_str})."
+                    ref_list.append(f"{source_line}\n\n")
                     compiled_citations.append({"chunk_index": i, "text": source_line})
             
             final_report = new_text + "".join(ref_list)

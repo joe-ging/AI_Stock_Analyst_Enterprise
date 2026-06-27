@@ -464,35 +464,40 @@
                                     <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-4">Inference Console</span>
                                 </div>
                                 
-                                {inferenceTime !== null && (
-                                    <div className="flex items-center gap-4 text-[10px] font-black">
-                                        <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1.5 rounded-md text-slate-600">
-                                            <span>LATENCY:</span>
-                                            <span className="text-slate-900">{inferenceTime}ms</span>
-                                        </div>
-                                        <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md ${cacheHit ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
-                                            <span>CACHE:</span>
-                                            <span>{cacheHit ? 'HIT' : 'MISS'}</span>
-                                        </div>
-                                    </div>
-                                )}
-                                
-                                <span className="text-[10px] font-bold text-gray-400 italic uppercase">{t.version}</span>
-                            </div>
+                        </div>
 
-                            <div className="flex-1 p-12 overflow-y-auto">
-                                {result === "" && !isLoading && !error && (
-                                    <div className="h-full flex flex-col items-center justify-center text-gray-200">
-                                        <Icons.File />
-                                        <p className="mt-6 text-base font-bold text-gray-300 tracking-tight text-center uppercase">
-                                            {t.waiting}<br/>
-                                            <span className="text-[11px] font-medium text-gray-400 normal-case italic">{t.waitHint}</span>
-                                        </p>
+                        {/* Right Results Panel */}
+                        <div className="flex-1 bg-white border border-gray-100 rounded-3xl p-10 shadow-sm flex flex-col relative overflow-hidden min-h-[500px]">
+                            {/* Running Loader Cover */}
+                            {isLoading && result === "" && (
+                                <div className="absolute inset-0 bg-white/90 backdrop-blur-sm flex flex-col items-center justify-center gap-4 z-10 animate-in fade-in duration-300">
+                                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-100 animate-bounce">
+                                        <span className="text-white text-xs font-black">AI</span>
                                     </div>
-                                )}
+                                    <div className="text-center">
+                                        <p className="text-xs font-black text-slate-800">Processing Document Ingestion...</p>
+                                        <p className="text-[10px] text-gray-400 font-medium mt-1">This typically takes 20-30 seconds depending on file complexity.</p>
+                                    </div>
+                                </div>
+                            )}
 
+                            {/* Empty State cover */}
+                            {result === "" && !isLoading && (
+                                <div className="flex-1 flex flex-col items-center justify-center text-center gap-4 py-20">
+                                    <div className="w-16 h-16 rounded-3xl bg-slate-50 flex items-center justify-center border border-slate-100">
+                                        <span className="text-2xl">📊</span>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs font-black text-slate-700">{t.noResultsTitle}</p>
+                                        <p className="text-[10px] text-gray-400 font-medium mt-1">{t.noResultsDesc}</p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Active Content Scroll Container */}
+                            <div className="flex-1 overflow-y-auto max-h-[750px] pr-2">
                                 {error && (
-                                    <div className="bg-red-50 text-red-800 p-6 rounded-3xl border border-red-100 text-sm shadow-inner">
+                                    <div className="mb-6 bg-rose-50 border border-rose-100 text-rose-800 px-6 py-4 rounded-2xl text-xs font-bold shadow-sm">
                                         <div className="font-black mb-1 tracking-tight uppercase">Connection Alert</div>
                                         <p className="font-medium opacity-80">{error}</p>
                                     </div>
@@ -500,39 +505,49 @@
 
                                 {result !== "" && (
                                     <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-1000">
-                                        {/* 1. Original Document Header Badge */}
-                                        <div className="flex flex-col gap-3">
-                                            <div className="inline-flex items-center gap-2 bg-indigo-50 border border-indigo-100 text-indigo-700 px-4 py-2 rounded-full text-xs font-bold shadow-sm self-start">
-                                                {t.originalDoc}
-                                            </div>
-                                        </div>
-
-                                        {/* 2. Main Markdown Report Body */}
                                         <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: marked.parse(ensureClosedMarkdownTables(result)) }} />
 
                                         {/* 3. Ragas Scoring Dashboard Cards */}
                                         <div className="mt-6 border-t border-gray-100 pt-8">
                                             <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">{t.ragasScore}</div>
-                                            <div className="grid grid-cols-3 gap-3">
+                                            <div className="grid grid-cols-3 gap-4">
                                                 {[
-                                                    {key: "faithfulness", label: "Faithfulness", style: { bg: "bg-indigo-50", border: "border-indigo-100", text: "text-indigo-600", valText: "text-indigo-700", bar: "bg-indigo-500" }},
-                                                    {key: "answer_recall", label: "Answer Recall", style: { bg: "bg-emerald-50", border: "border-emerald-100", text: "text-emerald-600", valText: "text-emerald-700", bar: "bg-emerald-500" }},
-                                                    {key: "relevance", label: "Relevance", style: { bg: "bg-violet-50", border: "border-violet-100", text: "text-violet-600", valText: "text-violet-700", bar: "bg-violet-500" }}
-                                                ].map(({key, label, style}) => {
+                                                    {
+                                                        key: "faithfulness", 
+                                                        label: "Faithfulness (忠实度)", 
+                                                        desc: "正文的所有数据和结论是否100%忠实于原文，有无捏造或模型幻觉。",
+                                                        style: { bg: "bg-indigo-50/50", border: "border-indigo-100/50", text: "text-indigo-600", valText: "text-indigo-800", bar: "bg-indigo-500" }
+                                                    },
+                                                    {
+                                                        key: "answer_recall", 
+                                                        label: "Answer Recall (召回率)", 
+                                                        desc: "报告是否完整覆盖了原文中分析该问题所需的所有关键财务与业务指标。",
+                                                        style: { bg: "bg-emerald-50/50", border: "border-emerald-100/50", text: "text-emerald-600", valText: "text-emerald-800", bar: "bg-emerald-500" }
+                                                    },
+                                                    {
+                                                        key: "relevance", 
+                                                        label: "Relevance (相关度)", 
+                                                        desc: "生成的报告内容与股票分析及投资决策的相关程度。",
+                                                        style: { bg: "bg-violet-50/50", border: "border-violet-100/50", text: "text-violet-600", valText: "text-violet-800", bar: "bg-violet-500" }
+                                                    }
+                                                ].map(({key, label, desc, style}) => {
                                                     const val = ragasScores ? (ragasScores[key] ?? 0) : null;
                                                     const pct = val !== null ? Math.round(val * 100) : null;
                                                     return (
-                                                        <div key={key} className={`${style.bg} border ${style.border} rounded-2xl p-4 relative overflow-hidden`}>
+                                                        <div key={key} className={`${style.bg} border ${style.border} rounded-2xl p-5 relative overflow-hidden flex flex-col justify-between min-h-[160px]`}>
                                                             {pct === null && (
                                                                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent animate-pulse" />
                                                             )}
-                                                            <div className="flex justify-between items-baseline mb-2">
-                                                                <span className={`text-[9px] font-black uppercase tracking-wider ${style.text}`}>{label}</span>
-                                                                <span className={`text-lg font-black ${style.valText}`}>
-                                                                    {pct !== null ? `${pct}%` : <span className="text-xs font-bold text-gray-400 animate-pulse">Auditing...</span>}
-                                                                </span>
+                                                            <div>
+                                                                <div className="flex justify-between items-baseline mb-2">
+                                                                    <span className={`text-xs font-black tracking-tight ${style.text}`}>{label}</span>
+                                                                    <span className={`text-3xl font-black ${style.valText}`}>
+                                                                        {pct !== null ? `${pct}%` : <span className="text-xs font-bold text-gray-400 animate-pulse">Auditing...</span>}
+                                                                    </span>
+                                                                </div>
+                                                                <p className="text-[10px] text-slate-500 leading-normal font-medium mb-4">{desc}</p>
                                                             </div>
-                                                            <div className="h-1.5 bg-white rounded-full overflow-hidden shadow-inner">
+                                                            <div className="h-2 bg-white rounded-full overflow-hidden shadow-inner w-full">
                                                                 <div 
                                                                     className={`h-full ${style.bar} rounded-full transition-all duration-1000`}
                                                                     style={{width: `${pct !== null ? pct : 0}%`}}
@@ -553,9 +568,6 @@
                                 )}
                             </div>
                         </div>
-                    </main>
-
-                    <footer className="bg-white border-t border-gray-100 py-8 px-12 flex flex-col md:flex-row justify-between items-center gap-4 text-center">
                         <div className="text-[10px] text-gray-400 font-medium">
                             © 2026 {CONFIG.userName}. Powered by <span className="font-black text-gray-600">{CONFIG.brandName}</span>
                         </div>
