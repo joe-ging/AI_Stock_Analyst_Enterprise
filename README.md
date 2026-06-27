@@ -5,145 +5,152 @@
 
 # 📊 JL Intelligence - Enterprise AI Analyst (Microservices Architecture)
 
-> AI-powered SEC financial analysis tool for institutional investors. Built with a production-ready microservices architecture, supporting distributed asynchronous ingestion, multi-modal semantic caching, and strict Ragas objective auditing.
+> AI-powered SEC financial analysis tool for institutional investors. Built with a production-ready microservices architecture, emphasizing **100% asynchronous concurrency**, multi-modal database optimization, and strict Ragas objective auditing.
 
 **Live Demo:** [JL Intelligence](https://jl-intelligence.netlify.app/)
-**Core Stack:** React · FastAPI · Milvus · Redis · Celery/RabbitMQ · DeepSeek / Gemini / OpenAINext
+**Core Stack:** React · FastAPI · Milvus · Redis · Celery/RabbitMQ · DeepSeek / Gemini
 
 ---
 
-## 🔹 Enterprise Microservices Architecture & Tech Stack
+## 🔹 1. Enterprise Microservices Architecture & Tech Stack
 
-Our system is completely decoupled into specialized microservices, avoiding the bottlenecks of monolithic designs. We utilize an event-driven architecture to handle high-concurrency document processing and low-latency semantic retrieval.
+Our system is decoupled into specialized microservices, avoiding monolithic bottlenecks. Every I/O operation—from document ingestion to LLM token streaming—is designed to be fully **asynchronous** to maximize concurrency.
 
 ### Core Tech Stack:
-- **Frontend**: React (SPA), Tailwind CSS
-- **API Gateway & Core Engine**: FastAPI (Python 3.10)
-- **Document Parsing**: `pdfplumber` (for precise layout and table extraction)
-- **Message Broker**: RabbitMQ
-- **Background Workers**: Celery
-- **Vector Database**: Milvus (Standalone) backed by MinIO & etcd
-- **Relational Database**: PostgreSQL (for document metadata tracking)
-- **Caching Layer**: Redis (for Task states and Semantic Caching)
+- **API Gateway & Core Engine**: FastAPI (Python 3.10) - utilizing `async`/`await` for non-blocking I/O.
+- **Document Parsing**: `pdfplumber` (for precise layout and SEC financial table extraction).
+- **Message Broker & Workers**: RabbitMQ & Celery (for distributing CPU-heavy parsing tasks).
+- **Polyglot Persistence (Databases)**:
+  - **PostgreSQL**: Relational metadata and document state tracking.
+  - **Milvus (Standalone)**: High-dimensional vector storage.
+  - **Redis**: In-memory semantic caching and task state management.
 - **AI Models & Orchestration**: 
-  - **Generation**: DeepSeek-Chat (Primary) with streaming inference via Server-Sent Events (SSE).
-  - **Fallback**: Gemini 2.5 Flash / Pro (Seamless fallback if primary model fails).
-  - **Embeddings**: OpenAINext (`text-embedding-3-small`) with Gemini embedding fallback.
-  - **Orchestration**: LangChain-style RAG pipelines with custom LangGraph-inspired Auditor routing loops.
+  - **Generation**: DeepSeek-Chat (Primary) / Gemini 2.5 Pro (Fallback).
+  - **Embeddings**: OpenAINext (`text-embedding-3-small`) / Gemini Embeddings.
+  - **Orchestration**: Custom LangChain-style async pipelines with LangGraph-inspired routing loops.
 
 ---
 
-## 🔹 Microservices Event-Driven Flows (Architecture Diagrams)
+## 🔹 2. The Asynchronous Data Pipeline (Concurrency & Speed)
 
-The core strength of our physical architecture is how microservices communicate and listen to each other asynchronously. Here are the three primary system flows:
+To handle massive enterprise workloads, both the **Input (Ingestion)** and **Output (Inference)** pipelines are completely asynchronous.
 
-### 1. Asynchronous Ingestion & Vectorization Flow (The Worker Loop)
-
-When a massive 200-page SEC 10-K report is uploaded, the Engine does not block the user's HTTP request. Instead, it registers the job and delegates the heavy lifting to the Celery Worker cluster via RabbitMQ.
+### 2.1 Async Input: Document Ingestion & Vectorization Flow
+When a massive 200-page SEC 10-K report is uploaded, the API does not block. It registers the job in PostgreSQL and delegates the vectorization to the Celery Worker cluster via RabbitMQ. 
 
 ```mermaid
 sequenceDiagram
     participant UI as React Client
-    participant Engine as FastAPI Engine
+    participant Engine as FastAPI (Async)
     participant PG as PostgreSQL
     participant MQ as RabbitMQ
     participant Worker as Celery Worker
-    participant AI as OpenAINext / Gemini
+    participant AI as Embedding API
     participant Milvus as Milvus DB
     
     UI->>Engine: POST /upload (PDF File)
-    Engine->>PG: Insert Document Metadata (Status: Pending)
-    Engine->>MQ: Publish Ingestion Task (Job ID)
+    Engine->>PG: Insert Metadata (Status: Pending)
+    Engine->>MQ: Publish Async Ingestion Task
     Engine-->>UI: Return 202 Accepted (Job ID)
     
     MQ->>Worker: Consume Task
     activate Worker
-    Worker->>Worker: Parse with pdfplumber
-    Worker->>Worker: Semantic Chunking (1000 chars)
+    Worker->>Worker: Parse via pdfplumber
+    Worker->>Worker: Semantic Chunking
     Worker->>AI: Request Embeddings
-    AI-->>Worker: Return Vector Dimensions
-    Worker->>Milvus: Upsert Vectors & Metadata
+    AI-->>Worker: Return Vectors
+    Worker->>Milvus: Upsert Vectors
     Worker->>PG: Update Status -> 'Completed'
     deactivate Worker
 ```
 
-### 2. Semantic Caching & Hybrid Retrieval Flow (The Query Loop)
-
-To minimize expensive LLM API calls and drastically reduce latency, the Engine intercepts queries and checks a Redis-backed Semantic Cache before hitting the Vector DB.
-
-```mermaid
-sequenceDiagram
-    participant UI as React Client
-    participant Engine as FastAPI Engine
-    participant Redis as Redis Cache
-    participant AI as OpenAINext (Embeddings)
-    participant Milvus as Milvus DB
-    
-    UI->>Engine: GET /query
-    Engine->>AI: Embed User Query
-    AI-->>Engine: Query Vector
-    
-    Engine->>Redis: Vector Cosine Similarity Search
-    alt Cache Hit (Cosine > 0.97)
-        Redis-->>Engine: Cached Analytical Report
-        Engine-->>UI: Return Cached Report (0ms LLM Latency)
-    else Cache Miss
-        Redis-->>Engine: Not Found
-        Engine->>Milvus: Hybrid Search (Query Vector)
-        Milvus-->>Engine: Top-K Relevant Chunks
-        Engine->>Engine: Rerank and Context Assembly
-    end
-```
-
-### 3. Streaming Inference & Objective Auditing Flow (The Generation Loop)
-
-We implement real-time streaming inference using Server-Sent Events (SSE). Once generation finishes, an isolated Ragas auditing process is launched to ensure institutional compliance.
+### 2.2 Async Output: Streaming Inference Flow
+Instead of waiting 30 seconds for a full financial report, the Engine utilizes Python's asynchronous generators (`async yield`) to push tokens to the React frontend via **Server-Sent Events (SSE)**. 
 
 ```mermaid
 sequenceDiagram
     participant UI as React Client
-    participant Engine as FastAPI Engine
+    participant Engine as FastAPI (Async)
     participant DeepSeek as DeepSeek API
-    participant Fallback as Gemini API (Fallback)
-    participant Ragas as Ragas Auditor (Gemini Pro)
     
-    Engine->>DeepSeek: Stream Completion Request (Prompt + Chunks)
-    
-    alt DeepSeek Throttled/Fails
-        DeepSeek--xEngine: 429 / 500 Error
-        Engine->>Fallback: Trigger Seamless Fallback
-        Fallback-->>Engine: Stream Tokens
-    else DeepSeek Success
-        DeepSeek-->>Engine: Stream Tokens
-    end
-    
-    Engine-->>UI: Yield Tokens via SSE (Server-Sent Events)
-    
-    Note over Engine, Ragas: Post-Generation Audit Phase
-    Engine->>Ragas: Evaluate (Draft Report vs Original Chunks)
-    Ragas-->>Engine: Faithfulness & Relevance Scores
-    Engine-->>UI: Yield {type: "done", citations, scores}
+    UI->>Engine: GET /query/stream
+    Engine->>DeepSeek: Async Stream Completion Request
+    DeepSeek-->>Engine: Stream Tokens (Chunk by Chunk)
+    Engine-->>UI: Yield Tokens via SSE
+    Note over UI, Engine: UI updates in real-time without blocking
 ```
 
 ---
 
-## 🔹 DevOps & CI/CD Pipeline
+## 🔹 3. High Availability, Fallbacks & Multi-Cloud Networking
 
-The system runs on a containerized environment deployed via automated CI/CD pipelines to ensure reliability and Zero-Downtime deployments.
+### Microservices Monitoring & LLM Cascade
+Microservices constantly monitor API health. If the primary `DeepSeek-Chat` endpoint hits a rate limit (HTTP 429) or crashes, the system triggers an **LLM Cascade Fallback** to `Gemini 2.5 Flash / Pro`.
+- **Why Gemini?** Gemini provides an exceptional balance of cost-efficiency and high throughput for fallback scenarios, ensuring RPO/RTO resilience without drastically spiking emergency API costs.
+
+### Multi-Cloud Networking & Proxy Elimination (TCO Strategy)
+Due to Gemini API's strict regional blocking in Hong Kong, the initial architecture relied on a brittle SOCKS5 proxy tunnel routing all LLM requests through an AWS Sydney EC2 instance. This drastically increased latency.
+- **Solution:** The stateless `engine` and `gateway` containers were permanently migrated to an AWS Sydney environment, natively bypassing regional API blocks and eliminating the proxy layer overhead, reducing API latency by over **50%**.
+
+---
+
+## 🔹 4. Database Optimization & Semantic Caching
+
+We utilize a combination of databases, each optimized for its specific domain:
+
+1. **Redis (Semantic Intercept)**: Before querying Milvus, the Engine computes the cosine similarity of user queries against previous requests in Redis. If similarity is > 0.97, the API bypasses the Vector DB and LLM layers entirely, delivering a 0ms response and saving 100% of Token costs.
+2. **PostgreSQL Tuning**: Implemented **PgBouncer** to prevent connection exhaustion. High-frequency queries are backed by B-Tree indexing (verified via `EXPLAIN ANALYZE`), and continuous slow-query monitoring is enabled.
+3. **Milvus**: Stores chunked document vectors for rapid hybrid similarity search.
 
 ```mermaid
-graph LR
-    A[Git Push to Main] -->|GitHub Actions| B[CI/CD Pipeline]
-    B --> C[Run PyTests & Linting]
-    C --> D[Build Docker Images]
-    D --> E[Deploy to Remote Server]
-    E --> F[Graceful Restart (docker-compose)]
+sequenceDiagram
+    participant Engine as FastAPI Engine
+    participant AI as Embedding API
+    participant Redis as Redis Cache
+    participant Milvus as Milvus DB
+    
+    Engine->>AI: Embed User Query
+    Engine->>Redis: Vector Cosine Similarity Search
+    alt Cache Hit (Cosine > 0.97)
+        Redis-->>Engine: Cached Report (0ms Latency)
+    else Cache Miss
+        Redis-->>Engine: Not Found
+        Engine->>Milvus: Hybrid Search (Query Vector)
+        Milvus-->>Engine: Top-K Relevant Chunks
+    end
 ```
 
-### Deployment (DevOps & MLOps Maintenance)
-- **Containerization**: Everything runs inside isolated Docker containers managed by `docker-compose`, making horizontal scaling of Celery workers trivial.
-- **Automated Testing**: Every push triggers integration tests (e.g., `test_e2e_stream.py`) to validate the RAG retrieval logic and API connectivity.
-- **Hot-Reload Deployments**: The deployment script (`deploy.sh`) selectively rebuilds and restarts only the modified application containers (`gateway`, `engine`, `worker`), leaving stateful services (`milvus`, `postgres`, `redis`) untouched to ensure zero data corruption.
+---
+
+## 🔹 5. Objective Auditing with Ragas (Hallucination Prevention)
+
+In the financial sector, hallucinations are unacceptable. After the async LLM streaming completes, the system triggers a background audit using **Ragas (Retrieval Augmented Generation Assessment)**—an open-source framework specifically designed to evaluate RAG pipelines.
+
+The Ragas Auditor acts as a deterministic judge, comparing the LLM's generated draft strictly against the original SEC text chunks retrieved from Milvus.
+
+```mermaid
+graph TD
+    A[Draft Report Generated] --> B[Ragas Auditor Engine]
+    C[(Milvus Retrieved SEC Chunks)] --> B
+    
+    B --> D{Evaluate Faithfulness}
+    D -->|Contains Unverified Claims| E[Reject / Flag Hallucination]
+    D -->|100% Sourced from Context| F{Evaluate Relevance}
+    
+    F -->|Low Relevance| G[Reject / Retry]
+    F -->|High Relevance| H[Pass & Attach Citations]
+    
+    H --> I[Final Institutional Report]
+```
+
+---
+
+## 🔹 6. DevOps & Zero-Downtime Delivery
+
+The system runs on a containerized environment deployed via automated CI/CD pipelines.
+
+- **GitOps Pipeline**: GitHub Actions trigger `pytest` integration tests to validate RAG retrieval logic.
+- **Zero-Downtime Hot Reloads**: The custom `deploy.sh` script applies rolling updates specifically to stateless containers (`gateway`, `engine`), intentionally preserving stateful volumes (`postgres`, `milvus`, `redis`) to prevent enterprise data corruption.
 
 ---
 
@@ -167,25 +174,3 @@ docker-compose logs -f engine worker
 ```
 
 **Access the Application:** Navigate to `http://localhost:8000/index.html`
-
----
-
-## 🔹 Solution Architecture Highlights (Tencent SA Interview Alignment)
-
-This project natively demonstrates several key **Solutions Architect (SA)** principles derived from the codebase's actual implementation, directly aligning with enterprise cloud requirements:
-
-1. **Cost Optimization (TCO) & Semantic Caching:** 
-   LLM inference is expensive. The codebase implements a Redis interceptor (`query_cache`) that computes the cosine similarity of user queries against previous requests. If similarity is > 0.97, the API completely bypasses the Vector DB and LLM layers, delivering a 0ms response and significantly reducing API Token costs.
-2. **High Availability (HA) & Fault Tolerance:** 
-   The system implements a robust **LLM Cascade**. If the primary `DeepSeek-Chat` endpoint hits a rate limit (HTTP 429) or crashes (HTTP 500), the `call_llm_with_fallback` mechanism dynamically routes the stream to `Gemini 2.5 Flash / Pro`. This guarantees system resilience and continuous delivery without the user experiencing downtime.
-3. **Decoupling Compute via Microservices:** 
-   Extracting structured tables from SEC PDFs via `pdfplumber` is highly CPU-bound. Instead of blocking the FastAPI thread pool, the architecture publishes an asynchronous event to RabbitMQ. The Celery Worker cluster consumes this queue, allowing the HTTP API Gateway to scale independently of the ingestion pipeline.
-4. **Zero-Downtime DevOps Delivery:** 
-   The deployment workflow utilizes GitOps principles (GitHub Actions). The custom `deploy.sh` script applies rolling updates specifically to stateless containers (`gateway`, `engine`), intentionally preserving stateful volumes (`postgres`, `milvus`, `redis`) to prevent enterprise data corruption.
-5. **Multi-Cloud Networking & Proxy Elimination (TCO Strategy):** 
-   Due to Gemini API's strict regional blocking in Hong Kong, the initial architecture relied on a brittle SOCKS5 proxy tunnel routing all LLM requests through an AWS Sydney EC2 instance. This drastically increased latency. As a subsequent SA optimization, the stateless `engine` and `gateway` containers were permanently migrated to an AWS Sydney environment, natively bypassing regional API blocks and eliminating the proxy layer overhead, reducing API latency by over 50%.
-
----
-
-## 📄 License
-MIT
