@@ -929,7 +929,10 @@ async def _build_rag_context(filename: str, analysis_type: str, language: str):
 async def query_rag_stream(
     filename: str = Form(...),
     analysis_type: AnalysisType = Form(...),
-    language: Language = Form(...)
+    language: Language = Form(...),
+    upload_mode: str = Form("pdf"),
+    ticker: str = Form(None),
+    years: str = Form(None)
 ):
     """Streaming SSE endpoint — tokens are pushed to client as they are generated"""
     if not DEEPSEEK_API_KEY:
@@ -962,6 +965,29 @@ async def query_rag_stream(
             full_text += chunk
             yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
         
+        # --- Lightweight LLM Self-Audit Ragas Scoring ---
+        ragas_scores = None
+        try:
+            ragas_prompt = (
+                f"You just wrote an institutional financial analysis report. "
+                f"Evaluate your own output on 3 metrics from 0.0 to 1.0 based on the source context and report quality.\n"
+                f"Context snippet (first 800 chars):\n{retrieved_context[:800]}\n\n"
+                f"Your report (first 600 chars):\n{full_text[:600]}\n\n"
+                f"Return ONLY valid JSON, no explanation: "
+                f'{{"faithfulness": <0.0-1.0>, "answer_recall": <0.0-1.0>, "relevance": <0.0-1.0>}}'
+            )
+            score_text = ""
+            async for sc in stream_deepseek(ragas_prompt):
+                score_text += sc
+            # Extract JSON from response
+            import re
+            json_match = re.search(r'\{[^}]+\}', score_text)
+            if json_match:
+                ragas_scores = json.loads(json_match.group())
+                logger.info(f"[Stream] Ragas self-scores: {ragas_scores}")
+        except Exception as e:
+            logger.warning(f"[Stream] Ragas scoring failed (non-critical): {e}")
+        
         # Cache the final result
         output_data = {
             "analysis": full_text,
@@ -969,7 +995,8 @@ async def query_rag_stream(
             "retrieved_context": retrieved_context,
             "cache_hit": False,
             "language": language.value,
-            "inference_time_ms": int((time.time() - start_time) * 1000)
+            "inference_time_ms": int((time.time() - start_time) * 1000),
+            "ragas_scores": ragas_scores
         }
         new_cache_key = f"analysis_cache_store:{uuid.uuid4()}"
         if redis_client:
@@ -981,8 +1008,8 @@ async def query_rag_stream(
             except Exception as e:
                 logger.error(f"[Stream] Cache write failed: {e}")
         
-        # Send final metadata event
-        yield f"data: {json.dumps({'type': 'done', 'inference_time_ms': int((time.time() - start_time) * 1000), 'citations': citations})}\n\n"
+        # Send final metadata event with Ragas scores
+        yield f"data: {json.dumps({'type': 'done', 'inference_time_ms': int((time.time() - start_time) * 1000), 'citations': citations, 'ragas_scores': ragas_scores})}\n\n"
     
     return StreamingResponse(sse_generator(), media_type="text/event-stream")
 

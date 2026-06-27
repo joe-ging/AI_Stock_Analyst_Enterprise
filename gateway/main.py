@@ -102,29 +102,51 @@ async def analyze_document(
 
 @app.post("/analyze/stream")
 async def analyze_document_stream(
-    file: UploadFile = File(...),
+    file: UploadFile = File(None),
     analysis_type: str = Form(...),
-    language: str = Form(...)
+    language: str = Form(...),
+    upload_mode: str = Form("pdf"),
+    ticker: str = Form(None),
+    years: str = Form(None)
 ):
-    """Streaming endpoint — ingests then streams SSE tokens from Engine"""
-    logger.info(f"Gateway streaming request: {file.filename} | Type: {analysis_type} | Lang: {language}")
+    """Streaming endpoint — supports PDF local upload or SEC EDGAR ticker mode"""
+    logger.info(f"Gateway streaming: mode={upload_mode} | type={analysis_type} | lang={language}")
 
-    # Step 1: Ingest (non-streaming, must complete first)
-    async with httpx.AsyncClient(timeout=600.0, trust_env=False) as client:
-        try:
-            file_bytes = await file.read()
-            files = {"file": (file.filename, file_bytes, file.content_type)}
-            ingest_resp = await client.post(f"{ENGINE_URL}/ingest", files=files)
-            if ingest_resp.status_code != 200:
-                raise HTTPException(status_code=ingest_resp.status_code, detail=f"Ingestion Failed: {ingest_resp.text}")
-            logger.info("Ingestion complete. Starting streaming query...")
-        except httpx.RequestError as e:
-            raise HTTPException(status_code=502, detail=f"Cannot reach RAG Engine: {str(e)}")
+    filename = "edgar_query"
+
+    if upload_mode == "pdf":
+        # Step 1: Ingest PDF (non-streaming, must complete first)
+        if file is None:
+            raise HTTPException(status_code=400, detail="File is required for PDF mode")
+        async with httpx.AsyncClient(timeout=600.0, trust_env=False) as client:
+            try:
+                file_bytes = await file.read()
+                files = {"file": (file.filename, file_bytes, file.content_type)}
+                ingest_resp = await client.post(f"{ENGINE_URL}/ingest", files=files)
+                if ingest_resp.status_code != 200:
+                    raise HTTPException(status_code=ingest_resp.status_code, detail=f"Ingestion Failed: {ingest_resp.text}")
+                logger.info("Ingestion complete. Starting streaming query...")
+            except httpx.RequestError as e:
+                raise HTTPException(status_code=502, detail=f"Cannot reach RAG Engine: {str(e)}")
+        filename = file.filename
+    else:
+        # EDGAR mode — no local ingestion needed
+        if not ticker:
+            raise HTTPException(status_code=400, detail="Ticker is required for EDGAR mode")
+        logger.info(f"EDGAR mode: ticker={ticker} | years={years}")
+        filename = f"EDGAR:{ticker}:{years or '2025,2024'}"
 
     # Step 2: Stream from Engine's /query/stream endpoint
     async def stream_passthrough():
         async with httpx.AsyncClient(timeout=600.0, trust_env=False) as client:
-            query_data = {"filename": file.filename, "analysis_type": analysis_type, "language": language}
+            query_data = {
+                "filename": filename,
+                "analysis_type": analysis_type,
+                "language": language,
+                "upload_mode": upload_mode,
+                "ticker": ticker or "",
+                "years": years or ""
+            }
             async with client.stream("POST", f"{ENGINE_URL}/query/stream", data=query_data) as resp:
                 if resp.status_code == 307:
                     # Cache hit! Engine redirected. Let's fetch the cached result instantly.
@@ -135,6 +157,7 @@ async def analyze_document_stream(
                         analysis_text = cached_json.get("analysis", "")
                         citations_data = cached_json.get("citations", [])
                         inf_time = cached_json.get("inference_time_ms", 0)
+                        ragas_scores = cached_json.get("ragas_scores", None)
                         
                         # Chunk analysis text for soft streaming effect
                         chunk_size = 50
@@ -143,8 +166,8 @@ async def analyze_document_stream(
                             yield f"data: {json.dumps({'type': 'token', 'content': token_chunk})}\n\n"
                             await asyncio.sleep(0.01)
                             
-                        # Send done event
-                        yield f"data: {json.dumps({'type': 'done', 'citations': citations_data, 'inference_time_ms': inf_time, 'cache_hit': True})}\n\n"
+                        # Send done event with ragas_scores
+                        yield f"data: {json.dumps({'type': 'done', 'citations': citations_data, 'inference_time_ms': inf_time, 'cache_hit': True, 'ragas_scores': ragas_scores})}\n\n"
                         await asyncio.sleep(0.5)
                         return
                     else:
