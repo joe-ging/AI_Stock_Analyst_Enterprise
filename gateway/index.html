@@ -48,7 +48,9 @@
                 waitHint: "請上傳財務文件以開啟深度分析",
                 founder: "創辦人",
                 version: "企業級原型 v1.5 (Live)",
-                disclaimer: "本頁面由 JL Intelligence (Jingling Education) 開發，僅用於技術演示與投研流程原型展示。"
+                disclaimer: "本頁面由 JL Intelligence (Jingling Education) 開發，僅用於技術演示與投研流程原型展示。",
+                citeTitle: "📚 RAG 向量數據源歸因",
+                sourceText: "數據源分塊"
             },
             zh_cn: {
                 title: "JL Intelligence | 精灵人工智能",
@@ -66,7 +68,9 @@
                 waitHint: "请上传财务文件以开启深度分析",
                 founder: "创始人",
                 version: "企业级原型 v1.5 (Live)",
-                disclaimer: "本页面由 JL Intelligence (Jingling Education) 开发，仅用于技术演示与投研流程原型展示。"
+                disclaimer: "本页面由 JL Intelligence (Jingling Education) 开发，仅用于技术演示与投研流程原型展示。",
+                citeTitle: "📚 RAG 向量数据源归因",
+                sourceText: "数据源分块"
             },
             en: {
                 title: "JL Intelligence",
@@ -84,7 +88,9 @@
                 waitHint: "Please upload a document to begin analysis",
                 founder: "Founder",
                 version: "Enterprise Prototype v1.5 (Live)",
-                disclaimer: "Developed by JL Intelligence (Jingling Education) for professional demo purposes."
+                disclaimer: "Developed by JL Intelligence (Jingling Education) for professional demo purposes.",
+                citeTitle: "📚 RAG Vector Citations",
+                sourceText: "Source Chunk"
             }
         };
 
@@ -392,11 +398,11 @@
                                         {/* Citations section */}
                                         {citations && citations.length > 0 && (
                                             <div className="mt-12 pt-8 border-t border-gray-100">
-                                                <h3 className="text-sm font-black text-gray-400 uppercase tracking-widest mb-4">📚 RAG Vector Citations (数据源归因)</h3>
+                                                <h3 className="text-sm font-black text-gray-400 uppercase tracking-widest mb-4">{t.citeTitle}</h3>
                                                 <div className="space-y-3">
                                                     {citations.map((cite, idx) => (
                                                         <div key={idx} className="bg-slate-50 p-4 rounded-xl border border-slate-100 text-xs text-gray-600 font-medium">
-                                                            <div className="text-[9px] text-indigo-600 font-bold uppercase mb-1">Source Chunk #{cite.chunk_index}</div>
+                                                            <div className="text-[9px] text-indigo-600 font-bold uppercase mb-1">{t.sourceText} #{cite.chunk_index}</div>
                                                             <p className="italic">"{cite.text}"</p>
                                                         </div>
                                                     ))}
