@@ -164,6 +164,15 @@ def build_final_prompt(target_query: str, struct_instructions: str, retrieved_co
         f"IMPORTANT: The user has selected {target_lang} as their preferred language. "
         f"You MUST generate the entire report in {target_lang}. Use professional financial terminology."
     )
+    
+    multi_year_instruction = ""
+    if "," in doc_year:
+        multi_year_instruction = (
+            f"CRITICAL MULTI-YEAR COMPARISON REQUIREMENT: The user has requested data spanning multiple years ({doc_year}). "
+            f"You MUST explicitly compare the financial metrics, strategic shifts, and trends across these years. "
+            f"Structure your analysis to highlight year-over-year changes (YoY), growth/decline patterns, and how the company's narrative has evolved across this timeline.\n"
+        )
+
     citation_instruction = build_citation_instruction(company_name, doc_year)
     return (
         f"{language_instruction}\n\n"
@@ -171,6 +180,7 @@ def build_final_prompt(target_query: str, struct_instructions: str, retrieved_co
         f"{target_query}\n\n"
         f"IMPORTANT PROFESSIONAL FINANCIAL REPORTING INSTRUCTIONS:\n"
         f"{struct_instructions}\n\n"
+        f"{multi_year_instruction}"
         f"STRICT FORMAT CONSTRAINTS:\n"
         f"- You MUST ONLY use the facts, figures, and page numbers present in the [RETRIEVED DATA] block below. Do NOT use your pre-trained memory or make up page numbers.\n"
         f"- DO NOT introduce any external regulatory codes, tax form numbers, or specific tax rates UNLESS they are explicitly written in the [RETRIEVED DATA] below.\n"
