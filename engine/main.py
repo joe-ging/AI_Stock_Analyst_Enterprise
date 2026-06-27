@@ -156,9 +156,9 @@ LANG_MAP = {
 def build_citation_instruction(filename: str) -> str:
     """Generates a generic citation format instruction based on the uploaded filename."""
     return (
-        f"- Format every citation in the 'Citations / References' section exactly as: "
-        f"[Footnote Number] Source: {filename}, at Page [Number] "
-        f"(where [Number] MUST be one of the actual page numbers from the retrieved context below)."
+        f"- Do NOT generate or append any separate 'Citations', 'References', or bibliography section at the very end of the report. "
+        f"Only use superscript footnoted indicators (e.g. <sup>1</sup>) inline next to facts. "
+        f"This is a strict format constraint to avoid duplicate text blocks."
     )
 
 def build_final_prompt(target_query: str, struct_instructions: str, retrieved_context: str, target_lang: str, filename: str) -> str:
@@ -173,11 +173,12 @@ def build_final_prompt(target_query: str, struct_instructions: str, retrieved_co
         f"{target_query}\n\n"
         f"IMPORTANT PROFESSIONAL FINANCIAL REPORTING INSTRUCTIONS:\n"
         f"{struct_instructions}\n\n"
-        f"STRICT CITATION CONSTRAINTS (CRITICAL FOR FAITHFULNESS):\n"
+        f"STRICT CITATION & FORMAT CONSTRAINTS:\n"
         f"- You MUST ONLY use the facts, figures, and page numbers present in the [RETRIEVED DATA] block below. Do NOT use your pre-trained memory or make up page numbers.\n"
         f"- DO NOT introduce any external regulatory codes, tax form numbers, or specific tax rates UNLESS they are explicitly written in the [RETRIEVED DATA] below.\n"
         f"- For every financial figure, percentage, rate, date, or specific claim, you MUST append a sequential superscript footnote indicator (e.g., <sup>1</sup>, <sup>2</sup>).\n"
-        f"{citation_instruction}\n\n"
+        f"- {citation_instruction}\n"
+        f"- CRITICAL TABLE FORMAT: If you output any Markdown tables, you MUST strictly close them with a blank line before starting any subsequent text to prevent rendering corruption.\n\n"
         f"[RETRIEVED DATA FROM SEC FILING]:\n{retrieved_context}"
     )
 
@@ -188,11 +189,12 @@ def build_audit_prompt(draft: str, retrieved_context: str, target_lang: str, fil
         f"You are a Senior Financial Audit Agent. Review the following draft report against the original source context. "
         f"Ensure that all dates, financial numbers, margins, and page references match the source exactly. "
         f"Correct any misstatements or formatting gaps.\n\n"
-        f"IMPORTANT CITATION AUDIT:\n"
+        f"IMPORTANT CITATION & TABLE AUDIT:\n"
         f"1. Make sure every single number, percentage, and date has a superscript footnote indicator.\n"
         f"2. Validate that NO page numbers other than those in the retrieved context are cited. Correct any hallucinated page numbers.\n"
         f"3. Strip out any external tax forms, tax rates, or law details that are not explicitly present in the retrieved context to maintain 100% faithfulness.\n"
-        f"4. Ensure the 'Citations / References' section at the end is present, sequential, and formatted correctly.\n"
+        f"4. Do NOT output or allow any separate 'References' or 'Citations' section at the end of the report.\n"
+        f"5. Ensure all Markdown tables are properly terminated and do not leak into regular paragraphs.\n"
         f"{citation_instruction}\n\n"
         f"Output the final polished report in {target_lang}.\n\n"
         f"[SOURCE CONTEXT]:\n{retrieved_context}\n\n"
