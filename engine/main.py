@@ -608,30 +608,16 @@ async def query_rag(
     start_time = time.time()
     cache_uuid = None
     
-    # 1. Retrieve document ID and metadata FIRST to guarantee unique cache keys
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute("SELECT id, company_name, doc_type, doc_year FROM documents WHERE filename = %s;", (filename,))
-        row = cur.fetchone()
-        if row:
-            doc_id = row[0]
-            db_company_name = row[1]
-            db_doc_type = row[2]
-            db_doc_year = row[3]
-    finally:
-        cur.close()
-        conn.close()
-        
-    if not row:
-        if filename.startswith("EDGAR:"):
-            doc_id, db_company_name, db_doc_type, db_doc_year = await ingest_edgar_on_the_fly(filename)
-        else:
-            raise HTTPException(status_code=404, detail="Document not found. Please upload first.")
+    doc_ids, db_company_name, db_doc_type, db_doc_year = await resolve_document_ids(filename)
     
     # 2. Redis Semantic Cache (Cosine > 0.97 in Milvus cache index)
-    template = REPORT_TEMPLATES[analysis_type.value]
-    target_query = template["query"]
+    template = REPORT_TEMPLATES.get(analysis_type.value)
+    if template:
+        target_query = template["query"]
+        struct_instructions = template.get("instructions", "")
+    else:
+        target_query = analysis_type.value
+        struct_instructions = "Analyze the company based on the custom query."
     
     # Embed the query to check cache
     cache_query_key = f"Company: {db_company_name} | Year: {db_doc_year} | Language: {language.value} | Query: {target_query}"
@@ -686,8 +672,12 @@ async def query_rag(
 
     # Node 2: Retriever Node (Milvus Parent-Child Search with Query Decomposition)
     logger.info("LangGraph [Retriever Node] executing parent-child similarity search...")
+    
+    # 3. Retrieve Context from Milvus Semantic Cache Store using IN operator
     get_milvus_connection()
-    collection = Collection(DOC_CHUNKS_COLLECTION_NAME)
+    col = Collection(DOC_CHUNKS_COLLECTION_NAME)
+    col.load()
+    doc_ids_list = ",".join(map(str, doc_ids))
     
     # Generic sub-queries that work for any SEC filing
     sub_queries = [target_query] + GENERIC_SUB_QUERIES
@@ -704,12 +694,12 @@ async def query_rag(
     
     # Parallel Milvus search via asyncio
     def search_milvus_sync(q_vec):
-        return collection.search(
+        return col.search(
             data=[q_vec],
             anns_field="embedding",
             param={"metric_type": "COSINE", "params": {"ef": 64}},
-            limit=3,
-            expr=f"document_id == {doc_id}",
+            limit=15,
+            expr=f"document_id in [{doc_ids_list}]",
             output_fields=["page_number", "parent_text", "child_text"]
         )
     
@@ -743,7 +733,6 @@ async def query_rag(
 
     # Node 3: Generator & Auditor Agent (Model Cascade)
     logger.info("LangGraph [Auditor & Generator Node] executing Model Cascade...")
-    struct_instructions = template["struct"]
     final_prompt = build_final_prompt(target_query, struct_instructions, retrieved_context, target_lang, filename, db_company_name, db_doc_year)
 
     # Initial Draft by DeepSeek (deepseek-chat) with Gemini fallback
@@ -837,75 +826,123 @@ async def query_rag(
 
     return output_data
 
-async def ingest_edgar_on_the_fly(filename: str):
-    """Dynamically fetch and ingest EDGAR document if it does not exist."""
-    if not filename.startswith("EDGAR:"):
-        raise HTTPException(status_code=404, detail="Document not found. Please upload first.")
-        
-    parts = filename.split(":")
-    ticker = parts[1]
-    years_str = parts[2]
-    years = years_str.split(",")
-    
+async def ingest_edgar_on_the_fly(ticker: str, missing_years: list[str]):
+    """Dynamically fetch and ingest missing EDGAR years individually."""
     from edgar_fetcher import fetch_edgar_chunks
-    logger.info(f"Triggering on-the-fly EDGAR ingestion for {ticker} {years}...")
-    results = await fetch_edgar_chunks(ticker, years)
+    logger.info(f"Triggering on-the-fly EDGAR ingestion for {ticker} missing years {missing_years}...")
     
-    valid_years = [y for y, chunks in results.items() if len(chunks) > 0]
-    if not valid_years:
-        raise HTTPException(status_code=404, detail=f"No SEC EDGAR filings found for {ticker} in years {years}")
-    
-    target_year = ",".join(valid_years)
-    chunks = []
-    for y in valid_years:
-        chunks.extend(results[y])
-    
+    # Refactor EDGAR ingestion to fetch and process years one by one
+    doc_ids = []
+    for y in missing_years:
+        results = await fetch_edgar_chunks(ticker, [y])
+        if not results.get(y) or len(results[y]) == 0:
+            continue
+        
+        chunks = results[y]
+        single_filename = f"EDGAR:{ticker}:{y}"
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        get_milvus_connection()
+        from pymilvus import Collection
+        collection = Collection(DOC_CHUNKS_COLLECTION_NAME)
+        
+        try:
+            cur.execute(
+                "INSERT INTO documents (filename, company_name, doc_type, doc_year) VALUES (%s, %s, %s, %s) RETURNING id;", 
+                (single_filename, ticker.upper(), "10-K/20-F", y)
+            )
+            doc_id = cur.fetchone()[0]
+            conn.commit()
+            doc_ids.append(doc_id)
+            
+            async def embed_chunk(chunk_dict, index, did):
+                vec = await get_embedding(chunk_dict["text"])
+                if not vec:
+                    return None
+                return {
+                    "document_id": did,
+                    "page_number": index + 1,
+                    "parent_text": chunk_dict["text"],
+                    "child_text": chunk_dict["text"],
+                    "embedding": vec
+                }
+            
+            batch_results = await asyncio.gather(*[embed_chunk(c, i, doc_id) for i, c in enumerate(chunks)])
+            valid_results = [r for r in batch_results if r is not None]
+            
+            if valid_results:
+                collection.insert([
+                    [r["document_id"] for r in valid_results],
+                    [r["page_number"] for r in valid_results],
+                    [r["parent_text"] for r in valid_results],
+                    [r["child_text"] for r in valid_results],
+                    [r["embedding"] for r in valid_results],
+                ])
+                collection.flush()
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            cur.close()
+            return_db_connection(conn)
+            
+    return doc_ids, ticker.upper(), "10-K/20-F", missing_years
+
+async def resolve_document_ids(filename: str):
+    """
+    Given a filename (e.g. EDGAR:DAO:2025,2024 or local_upload.pdf),
+    returns a tuple: (list_of_doc_ids, db_company_name, db_doc_type, db_doc_year).
+    Dynamically fetches missing EDGAR years individually.
+    """
     conn = get_db_connection()
     cur = conn.cursor()
+    
+    doc_ids = []
+    company_name = None
+    doc_type = None
+    doc_years = []
+    
     try:
-        cur.execute(
-            "INSERT INTO documents (filename, company_name, doc_type, doc_year) VALUES (%s, %s, %s, %s) RETURNING id;", 
-            (filename, ticker.upper(), "10-K/20-F", target_year)
-        )
-        doc_id = cur.fetchone()[0]
-        conn.commit()
-    except Exception as e:
-        conn.rollback()
-        raise e
+        if filename.startswith("EDGAR:"):
+            parts = filename.split(":")
+            ticker = parts[1]
+            years_str = parts[2]
+            requested_years = years_str.split(",")
+            
+            missing_years = []
+            for y in requested_years:
+                cur.execute("SELECT id, company_name, doc_type FROM documents WHERE filename = %s;", (f"EDGAR:{ticker}:{y}",))
+                row = cur.fetchone()
+                if row:
+                    doc_ids.append(row[0])
+                    company_name = row[1]
+                    doc_type = row[2]
+                    doc_years.append(y)
+                else:
+                    missing_years.append(y)
+                    
+            if missing_years:
+                new_ids, new_comp, new_type, new_years = await ingest_edgar_on_the_fly(ticker, missing_years)
+                doc_ids.extend(new_ids)
+                doc_years.extend(new_years)
+                if not company_name:
+                    company_name = new_comp
+                    doc_type = new_type
+        else:
+            cur.execute("SELECT id, company_name, doc_type, doc_year FROM documents WHERE filename = %s;", (filename,))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Document not found.")
+            doc_ids.append(row[0])
+            company_name = row[1]
+            doc_type = row[2]
+            doc_years.append(row[3])
     finally:
         cur.close()
         return_db_connection(conn)
         
-    get_milvus_connection()
-    from pymilvus import Collection
-    collection = Collection(DOC_CHUNKS_COLLECTION_NAME)
-    
-    async def embed_chunk(chunk_dict, index):
-        vec = await get_embedding(chunk_dict["text"])
-        if not vec:
-            return None
-        return {
-            "document_id": doc_id,
-            "page_number": index + 1,
-            "parent_text": chunk_dict["text"],
-            "child_text": chunk_dict["text"],
-            "embedding": vec
-        }
-    
-    batch_results = await asyncio.gather(*[embed_chunk(c, i) for i, c in enumerate(chunks)])
-    valid_results = [r for r in batch_results if r is not None]
-    
-    if valid_results:
-        collection.insert([
-            [r["document_id"] for r in valid_results],
-            [r["page_number"] for r in valid_results],
-            [r["parent_text"] for r in valid_results],
-            [r["child_text"] for r in valid_results],
-            [r["embedding"] for r in valid_results],
-        ])
-        collection.flush()
-        
-    return doc_id, ticker.upper(), "10-K/20-F", target_year
+    return doc_ids, company_name, doc_type, ",".join(doc_years)
 
 # --- Streaming SSE Endpoint ---
 
@@ -913,32 +950,17 @@ async def _build_rag_context(filename: str, analysis_type: str, language: str):
     """Shared helper: retrieves context, builds prompts using REPORT_TEMPLATES.
     Returns dict with prompt data, or None if cache hit."""
     
-    # Retrieve doc_id and metadata FIRST to guarantee unique cache keys
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute("SELECT id, company_name, doc_type, doc_year FROM documents WHERE filename = %s;", (filename,))
-        row = cur.fetchone()
-        if row:
-            doc_id = row[0]
-            db_company_name = row[1]
-            db_doc_type = row[2]
-            db_doc_year = row[3]
-    finally:
-        cur.close()
-        return_db_connection(conn)
-        
-    if not row:
-        if filename.startswith("EDGAR:"):
-            doc_id, db_company_name, db_doc_type, db_doc_year = await ingest_edgar_on_the_fly(filename)
-        else:
-            raise HTTPException(status_code=404, detail="Document not found.")
+    doc_ids, db_company_name, db_doc_type, db_doc_year = await resolve_document_ids(filename)
 
     template = REPORT_TEMPLATES.get(analysis_type)
-    if not template:
-        raise HTTPException(status_code=400, detail=f"Invalid analysis_type: {analysis_type}")
-    target_query = template["query"]
-    logger.info(f"[DEBUG] _build_rag_context: Query template found, embedding query text: {target_query[:60]}...")
+    if template:
+        target_query = template["query"]
+        struct_instructions = template.get("instructions", "")
+    else:
+        target_query = analysis_type
+        struct_instructions = "Analyze the company based on the custom query."
+        
+    logger.info(f"[DEBUG] _build_rag_context: Target query: {target_query[:60]}...")
     cache_query_key = f"Company: {db_company_name} | Year: {db_doc_year} | Language: {language} | Query: {target_query}"
     query_vector = await get_embedding(cache_query_key)
     if not query_vector:
@@ -966,15 +988,15 @@ async def _build_rag_context(filename: str, analysis_type: str, language: str):
                         logger.info(f"[Cache] Mismatch (cached={cached_json.get('doc_year')}, requested={db_doc_year}). Forcing regeneration.")
                 except Exception as e:
                     logger.error(f"[Cache] Failed to parse cached data: {e}")
-        cur.close()
-        return_db_connection(conn)
     
     target_lang = LANG_MAP.get(language, "English")
-    logger.info(f"[DEBUG] _build_rag_context: Retreiving doc chunks from Milvus for doc_id={doc_id}...")
+    logger.info(f"[DEBUG] _build_rag_context: Retreiving doc chunks from Milvus for doc_ids={doc_ids}...")
     
     # Parallel retrieval using generic sub-queries
     get_milvus_connection()
-    collection = Collection(DOC_CHUNKS_COLLECTION_NAME)
+    col = Collection(DOC_CHUNKS_COLLECTION_NAME)
+    col.load()
+    doc_ids_list = ",".join(map(str, doc_ids))
     sub_queries = [target_query] + GENERIC_SUB_QUERIES
     
     async def embed_single(sq):
@@ -984,10 +1006,10 @@ async def _build_rag_context(filename: str, analysis_type: str, language: str):
     q_vectors = [v for v in embedding_results if v is not None] or [query_vector]
     
     def search_sync(qv):
-        return collection.search(
+        return col.search(
             data=[qv], anns_field="embedding",
             param={"metric_type": "COSINE", "params": {"ef": 128}},
-            limit=15, expr=f"document_id == {doc_id}",
+            limit=15, expr=f"document_id in [{doc_ids_list}]",
             output_fields=["page_number", "parent_text", "child_text"]
         )
     search_results = await asyncio.gather(*[asyncio.to_thread(search_sync, qv) for qv in q_vectors])
@@ -1011,7 +1033,6 @@ async def _build_rag_context(filename: str, analysis_type: str, language: str):
         citations.append({"chunk_index": page, "text": f"Page {page}: " + parent_txt[:200].strip() + "..."})
     
     # Build prompts using shared helpers
-    struct_instructions = template["struct"]
     final_prompt = build_final_prompt(target_query, struct_instructions, retrieved_context, target_lang, filename, db_company_name, db_doc_year)
     
     return {

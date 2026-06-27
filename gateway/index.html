@@ -422,9 +422,9 @@
                                 <h2 className="text-[10px] font-black text-gray-400 mb-6 uppercase tracking-widest">02. {t.modeTitle}</h2>
                                 <div className="space-y-3">
                                     {[
-                                        {id: 'comprehensive', label: t.comprehensive, sub: 'Alpha Signal, Valuation'},
-                                        {id: 'compliance', label: t.compliance, sub: 'SFC/Regulatory Review'},
-                                        {id: 'quick', label: t.quick, sub: 'Executive Decision Data'}
+                                        {id: 'deep_analysis', label: t.comprehensive, sub: 'Alpha Signal, Valuation'},
+                                        {id: 'compliance_risk', label: t.compliance, sub: 'SFC/Regulatory Review'},
+                                        {id: 'executive_summary', label: t.quick, sub: 'Executive Decision Data'}
                                     ].map(m => (
                                         <label key={m.id} className={`block p-4 rounded-2xl border-2 cursor-pointer transition-all ${analysisType === m.id ? 'border-indigo-600 bg-indigo-50/50 shadow-sm' : 'border-gray-50 hover:border-gray-100'}`}>
                                             <div className="flex items-center gap-3">
@@ -437,6 +437,32 @@
                                             </div>
                                         </label>
                                     ))}
+                                    
+                                    {/* Custom Query Box */}
+                                    <label className={`block p-4 rounded-2xl border-2 cursor-pointer transition-all ${!['deep_analysis', 'compliance_risk', 'executive_summary'].includes(analysisType) ? 'border-indigo-600 bg-indigo-50/50 shadow-sm' : 'border-gray-50 hover:border-gray-100'}`}>
+                                        <div className="flex flex-col gap-2">
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-2 h-2 rounded-full ${!['deep_analysis', 'compliance_risk', 'executive_summary'].includes(analysisType) ? 'bg-indigo-600 animate-pulse' : 'bg-gray-200'}`}></div>
+                                                <input type="radio" name="mode" value="custom_placeholder" checked={!['deep_analysis', 'compliance_risk', 'executive_summary'].includes(analysisType)} onChange={() => setAnalysisType("")} className="hidden"/>
+                                                <p className={`text-sm font-black ${!['deep_analysis', 'compliance_risk', 'executive_summary'].includes(analysisType) ? 'text-indigo-900' : 'text-gray-700'}`}>
+                                                    {t.uploadMode === 'pdf' ? "Custom Question" : "自定义自由提问"}
+                                                </p>
+                                                <p className="text-[9px] text-gray-400 font-medium uppercase">Free-form Query</p>
+                                            </div>
+                                            <textarea 
+                                                rows="2"
+                                                placeholder={t.uploadMode === 'pdf' ? "e.g. Please analyze the capital expenditure and R&D costs..." : "例如：请帮我深挖该公司在 AI 领域的具体资金投入规模和裁员情况..."}
+                                                value={!['deep_analysis', 'compliance_risk', 'executive_summary'].includes(analysisType) ? analysisType : ""}
+                                                onChange={e => setAnalysisType(e.target.value)}
+                                                onClick={() => {
+                                                    if (['deep_analysis', 'compliance_risk', 'executive_summary'].includes(analysisType)) {
+                                                        setAnalysisType("");
+                                                    }
+                                                }}
+                                                className={`w-full mt-2 px-3 py-2 text-xs border rounded-lg focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none resize-none ${!['deep_analysis', 'compliance_risk', 'executive_summary'].includes(analysisType) ? 'bg-white border-indigo-200' : 'bg-gray-50 border-gray-200'}`}
+                                            />
+                                        </div>
+                                    </label>
                                 </div>
                                 <button 
                                     onClick={runAnalysis} 
