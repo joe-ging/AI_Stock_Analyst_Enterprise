@@ -57,7 +57,7 @@ def call_deepseek(prompt: str, model: str = "deepseek-chat") -> str:
         "temperature": 0.2
     }
     
-    with httpx.Client(timeout=60.0) as cl:
+    with httpx.Client(timeout=60.0, trust_env=False) as cl:
         response = cl.post(url, headers=headers, json=payload)
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"]
