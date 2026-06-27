@@ -196,6 +196,9 @@
                                         if (parsed.type === "token" && parsed.content) {
                                             fullText += parsed.content;
                                             setResult(fullText);
+                                        } else if (parsed.type === "stage" && parsed.content === "audit") {
+                                            fullText = "";
+                                            setResult("");
                                         } else if (parsed.type === "done") {
                                             if (parsed.citations) setCitations(parsed.citations);
                                             if (parsed.inference_time_ms) setInferenceTime(parsed.inference_time_ms);
