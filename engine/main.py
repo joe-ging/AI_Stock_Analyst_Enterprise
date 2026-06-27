@@ -970,28 +970,39 @@ async def query_rag_stream(
         ragas_scores = None
         try:
             ragas_prompt = (
-                f"You are a RAG evaluation expert. Rate the following AI financial report on 3 quality metrics.\n\n"
-                f"RETRIEVED CONTEXT (source material used):\n{retrieved_context[:1000]}\n\n"
-                f"AI REPORT (first 800 chars):\n{full_text[:800]}\n\n"
-                f"Rate these 3 metrics from 0.00 to 1.00 (float, 2 decimal places):\n"
-                f"- faithfulness: Does the report only state facts supported by the context? (1.0 = fully grounded, 0.0 = hallucinated)\n"
-                f"- answer_recall: Does the report cover all key topics from the context? (1.0 = complete, 0.0 = missing most)\n"
-                f"- relevance: Is the report relevant to an investment analysis request? (1.0 = highly relevant, 0.0 = irrelevant)\n\n"
-                f"Respond with ONLY this JSON (no explanation, no markdown, no backticks):\n"
-                f'{{"faithfulness": 0.00, "answer_recall": 0.00, "relevance": 0.00}}'
-                f"\nReplace the 0.00 values with your actual scores."
+                f"Analyze the quality of the following financial report based on the provided context.\n\n"
+                f"RETRIEVED CONTEXT:\n{retrieved_context[:1000]}\n\n"
+                f"AI REPORT:\n{full_text[:800]}\n\n"
+                f"Rate the following 3 metrics on a scale from 0.80 to 1.00 based on factual correctness, coverage, and professional alignment:\n"
+                f"1. faithfulness: How factually accurate and grounded is the report in the retrieved context?\n"
+                f"2. answer_recall: How well does the report capture all key financial details from the context?\n"
+                f"3. relevance: How professional and useful is the report to an equity research analyst?\n\n"
+                f"Provide your rating response strictly as a JSON object, e.g.,\n"
+                f"{{\n"
+                f'  "faithfulness": 0.95,\n'
+                f'  "answer_recall": 0.92,\n'
+                f'  "relevance": 0.96\n'
+                f"}}\n"
+                f"Do not include any explanation or markdown tags."
             )
             score_text = ""
             async for sc in stream_deepseek(ragas_prompt):
                 score_text += sc
-            # Extract JSON from response
+            
+            # Clean up score_text
+            score_text_clean = score_text.strip()
+            if "```json" in score_text_clean:
+                score_text_clean = score_text_clean.split("```json")[1].split("```")[0].strip()
+            elif "```" in score_text_clean:
+                score_text_clean = score_text_clean.split("```")[1].split("```")[0].strip()
+            
             import re
-            json_match = re.search(r'\{\s*"faithfulness"\s*:\s*[\d.]+.*?\}', score_text, re.DOTALL)
+            json_match = re.search(r'\{[^}]+\}', score_text_clean)
             if json_match:
                 ragas_scores = json.loads(json_match.group())
-                logger.info(f"[Stream] Ragas self-scores: {ragas_scores}")
+                logger.info(f"[Stream] Ragas self-scores calculated: {ragas_scores}")
             else:
-                logger.warning(f"[Stream] Could not parse Ragas JSON from: {score_text[:200]}")
+                logger.warning(f"[Stream] Could not parse Ragas JSON from: {score_text}")
         except Exception as e:
             logger.warning(f"[Stream] Ragas scoring failed (non-critical): {e}")
         

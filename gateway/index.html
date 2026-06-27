@@ -244,9 +244,15 @@
                                             fullText = "";
                                             setResult("");
                                         } else if (parsed.type === "done") {
+                                            console.log("Gateway received DONE event data:", parsed);
                                             if (parsed.citations) setCitations(parsed.citations);
                                             if (parsed.inference_time_ms) setInferenceTime(parsed.inference_time_ms);
-                                            if (parsed.ragas_scores) setRagasScores(parsed.ragas_scores);
+                                            if (parsed.ragas_scores) {
+                                                console.log("Setting ragasScores state with:", parsed.ragas_scores);
+                                                setRagasScores(parsed.ragas_scores);
+                                            } else {
+                                                console.warn("No ragas_scores field present in parsed done event data!");
+                                            }
                                             setCacheHit(parsed.cache_hit || false);
                                         } else if (parsed.type === "error") {
                                             setError(parsed.content || "Inferencing error encountered");
