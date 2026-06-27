@@ -405,9 +405,10 @@ async def query_rag(
         f"3. **KEY INVESTMENT RISKS & MITIGATION**: Graded analysis of regulatory, competitive, and operational risks.\n"
         f"4. **VALUATION & CAPITAL STRUCTURE AUDIT**: Deep dive into long-term investments, Level 3 asset valuations, and tax considerations (e.g., PFIC status).\n"
         f"5. **CITATIONS / REFERENCES**: List all footnote citations sequentially.\n\n"
-        f"CITATION REQUIREMENTS:\n"
+        f"STRICT CITATION CONSTRAINTS:\n"
+        f"- You MUST ONLY use the facts, figures, and page numbers present in the [RETRIEVED DATA] block below. Do NOT use your pre-trained memory or make up page numbers (like Page 33, 67, etc.) that are not in the [RETRIEVED DATA] below.\n"
         f"- For every financial figure, percentage, rate, date, or specific claim, you MUST append a sequential superscript footnote indicator (e.g., <sup>1</sup>, <sup>2</sup>).\n"
-        f"- Format every citation in the 'Citations / References' section exactly as: [Footnote Number] New Oriental Education & Technology Group Inc., Annual Report (Form 20-F) for the Fiscal Year Ended May 31, 2025, at Page [Number].\n\n"
+        f"- Format every citation in the 'Citations / References' section exactly as: [Footnote Number] New Oriental Education & Technology Group Inc., Annual Report (Form 20-F) for the Fiscal Year Ended May 31, 2025, at Page [Number] (where [Number] MUST be one of the actual page numbers from the retrieved context below).\n\n"
         f"[RETRIEVED DATA FROM SEC 10-K FILING]:\n{retrieved_context}"
     )
 
@@ -446,7 +447,8 @@ async def query_rag(
         f"Correct any misstatements or formatting gaps.\n\n"
         f"IMPORTANT CITATION AUDIT:\n"
         f"1. Make sure every single number, percentage, and date has a superscript footnote indicator (e.g., <sup>1</sup>, <sup>2</sup>).\n"
-        f"2. Ensure the 'Citations / References' section at the end is present, sequential, and formatted exactly as:\n"
+        f"2. Validate that NO page numbers other than those in the retrieved context are cited. Correct any hallucinated page numbers.\n"
+        f"3. Ensure the 'Citations / References' section at the end is present, sequential, and formatted exactly as:\n"
         f"   [Footnote Number] New Oriental Education & Technology Group Inc., Annual Report (Form 20-F) for the Fiscal Year Ended May 31, 2025, at Page [Number].\n\n"
         f"Output the final polished report in {target_lang}.\n\n"
         f"[SOURCE CONTEXT]:\n{retrieved_context}\n\n"
