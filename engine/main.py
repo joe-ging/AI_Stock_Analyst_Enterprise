@@ -421,16 +421,39 @@ async def query_rag(
         f"You MUST generate the entire report in {target_lang}. Use professional financial terminology."
     )
     
+    struct_instructions = ""
+    if analysis_type == "comprehensive":
+        struct_instructions = (
+            "You are a Lead Equity Research Analyst preparing an institutional-grade investment memorandum for executive leadership. The report must be highly professional, avoiding generic filler, and structured exactly as follows:\n\n"
+            "1. **EXECUTIVE SUMMARY & INVESTMENT THESIS**: State the rating (Buy/Hold/Sell) and the core justification.\n"
+            "2. **FINANCIAL PERFORMANCE & TREND AUDIT**: Analyze revenues, margins, and cash flow trends. Use tables if appropriate.\n"
+            "3. **KEY INVESTMENT RISKS & MITIGATION**: Graded analysis of regulatory, competitive, and operational risks.\n"
+            "4. **VALUATION & CAPITAL STRUCTURE AUDIT**: Deep dive into long-term investments, Level 3 asset valuations, and tax considerations (e.g., PFIC status).\n"
+            "5. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
+        )
+    elif analysis_type == "compliance":
+        struct_instructions = (
+            "You are a Chief Compliance Officer preparing a regulatory audit report. The report must be highly professional, focusing strictly on risks and compliance framework, and structured exactly as follows:\n\n"
+            "1. **COMPLIANCE EXECUTIVE SUMMARY**: Overall compliance risk warning rating (High/Medium/Low Risk) and summary.\n"
+            "2. **LITIGATION & INTELLECTUAL PROPERTY AUDIT**: Detail copyright disputes, historical judgements (e.g. GMAC/ETS case), damages paid, and policy gaps.\n"
+            "3. **REGULATORY POLICY & SHIFT IMPACTS**: Analyze the impact of private education regulation changes on business transformation.\n"
+            "4. **TAX COMPLIANCE & PFIC STATUS DISCLOSURE**: Detail the PFIC classification, tests (asset/income tests), and IRS implications for US investors.\n"
+            "5. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
+        )
+    elif analysis_type == "quick":
+        struct_instructions = (
+            "You are a Senior Investment Analyst providing a high-speed brief for executive leadership (CEO/CFO). The brief must be extremely concise, bulleted, and structured exactly as follows:\n\n"
+            "1. **EXECUTIVE ACTIONS & RECOMMENDATIONS**: One-sentence core rating and actionable recommendation.\n"
+            "2. **KEY FINANCIAL HIGHLIGHTS**: Bullet points of key revenue growth and margins.\n"
+            "3. **IMMINENT RISK ALERTS**: Two major risk issues that cannot be ignored.\n"
+            "4. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
+        )
+
     final_prompt = (
         f"{language_instruction}\n\n"
         f"{target_query}\n\n"
         f"IMPORTANT PROFESSIONAL FINANCIAL REPORTING INSTRUCTIONS:\n"
-        f"You are a Lead Equity Research Analyst. You are preparing an institutional-grade investment memorandum for executive leadership. The report must be highly professional, avoiding generic filler, and structured exactly as follows:\n\n"
-        f"1. **EXECUTIVE SUMMARY & INVESTMENT THESIS**: State the rating (Buy/Hold/Sell) and the core justification.\n"
-        f"2. **FINANCIAL PERFORMANCE & TREND AUDIT**: Analyze revenues, margins, and cash flow trends. Use tables if appropriate.\n"
-        f"3. **KEY INVESTMENT RISKS & MITIGATION**: Graded analysis of regulatory, competitive, and operational risks.\n"
-        f"4. **VALUATION & CAPITAL STRUCTURE AUDIT**: Deep dive into long-term investments, Level 3 asset valuations, and tax considerations (e.g., PFIC status).\n"
-        f"5. **CITATIONS / REFERENCES**: List all footnote citations sequentially.\n\n"
+        f"{struct_instructions}\n\n"
         f"STRICT CITATION CONSTRAINTS (CRITICAL FOR FAITHFULNESS):\n"
         f"- You MUST ONLY use the facts, figures, and page numbers present in the [RETRIEVED DATA] block below. Do NOT use your pre-trained memory or make up page numbers (like Page 33, 67, etc.) that are not in the [RETRIEVED DATA] below.\n"
         f"- DO NOT introduce any external regulatory codes, custom legal formulas, tax form numbers (like IRS Form 8621), or specific tax rates UNLESS they are explicitly written in the [RETRIEVED DATA] below. If they are not in the text, you must not include them.\n"

@@ -66,7 +66,8 @@ def evaluate_context_precision(question: str, context: str) -> float:
     """Ragas Metric: Context Precision (Is the retrieved context relevant to the question?)"""
     prompt = (
         "You are an AI Quality Auditor. Evaluate the relevance of the retrieved Context to the Question.\n\n"
-        "Determine what percentage of sentences in the Context are directly useful to answer the Question.\n"
+        "Determine if the retrieved Context contains the necessary facts and sections to answer the Question.\n"
+        "Score the precision from 0.0 to 1.0, where 1.0 means the retrieved context contains all highly relevant sections to answer the question, and 0.0 means none of it is relevant.\n"
         "Output a raw JSON object containing only one key: 'precision' (float value between 0.0 and 1.0).\n\n"
         f"[Question]:\n{question}\n\n"
         f"[Context]:\n{context}\n\n"
