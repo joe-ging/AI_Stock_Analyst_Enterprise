@@ -1,7 +1,6 @@
 import os
 import time
 import logging
-import gc
 import psycopg2
 import uvicorn
 import redis
@@ -9,7 +8,9 @@ import json
 import asyncio
 import uuid
 import boto3
+from typing import AsyncGenerator
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi.responses import StreamingResponse
 import httpx
 from google import genai
 from google.genai import types
@@ -41,6 +42,7 @@ app = FastAPI()
 client = genai.Client(api_key=API_KEY)
 
 def call_deepseek(prompt: str, model: str = "deepseek-chat") -> str:
+    """Synchronous DeepSeek call (kept for backward compat with tests/eval)"""
     if not DEEPSEEK_API_KEY:
         raise ValueError("DEEPSEEK_API_KEY is not configured")
     
@@ -61,6 +63,61 @@ def call_deepseek(prompt: str, model: str = "deepseek-chat") -> str:
         response = cl.post(url, headers=headers, json=payload)
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"]
+
+async def call_deepseek_async(prompt: str, model: str = "deepseek-chat") -> str:
+    """Async DeepSeek call (non-blocking for the event loop)"""
+    if not DEEPSEEK_API_KEY:
+        raise ValueError("DEEPSEEK_API_KEY is not configured")
+    
+    url = "https://api.deepseek.com/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.2
+    }
+    
+    async with httpx.AsyncClient(timeout=120.0, trust_env=False) as cl:
+        response = await cl.post(url, headers=headers, json=payload)
+        response.raise_for_status()
+        return response.json()["choices"][0]["message"]["content"]
+
+async def stream_deepseek(prompt: str, model: str = "deepseek-chat") -> AsyncGenerator[str, None]:
+    """Streaming DeepSeek call — yields text chunks as they arrive"""
+    if not DEEPSEEK_API_KEY:
+        raise ValueError("DEEPSEEK_API_KEY is not configured")
+    
+    url = "https://api.deepseek.com/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.2,
+        "stream": True
+    }
+    
+    async with httpx.AsyncClient(timeout=120.0, trust_env=False) as cl:
+        async with cl.stream("POST", url, headers=headers, json=payload) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if line.startswith("data: "):
+                    data_str = line[6:]
+                    if data_str.strip() == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data_str)
+                        delta = chunk.get("choices", [{}])[0].get("delta", {})
+                        content = delta.get("content", "")
+                        if content:
+                            yield content
+                    except json.JSONDecodeError:
+                        continue
 
 # Connect to Redis
 redis_client = None
@@ -365,25 +422,29 @@ async def query_rag(
         "新东方 PFIC 被动外国投资公司状态 资产测试 收入测试 美国投资者税务影响 长期投资公允价值变动 Level 3 资产减值"
     ]
     
-    query_vectors = []
-    for sq in sub_queries:
+    # Parallel sub-query embedding via asyncio
+    async def embed_single(sq: str):
         try:
-            emb_res = client.models.embed_content(
+            emb_res = await asyncio.to_thread(
+                client.models.embed_content,
                 model="gemini-embedding-2",
                 contents=sq,
                 config=types.EmbedContentConfig(output_dimensionality=768)
             )
-            query_vectors.append(emb_res.embeddings[0].values)
+            return emb_res.embeddings[0].values
         except Exception as e:
-            logger.error(f"Embedding sub-query '{sq}' failed: {e}")
+            logger.error(f"Embedding sub-query failed: {e}")
+            return None
+    
+    embedding_results = await asyncio.gather(*[embed_single(sq) for sq in sub_queries])
+    query_vectors = [v for v in embedding_results if v is not None]
 
     if not query_vectors:
         query_vectors = [query_vector]
-        
-    retrieved_items = []
-    seen_parents = set()
-    for q_vec in query_vectors:
-        search_res = collection.search(
+    
+    # Parallel Milvus search via asyncio
+    def search_milvus_sync(q_vec):
+        return collection.search(
             data=[q_vec],
             anns_field="embedding",
             param={"metric_type": "COSINE", "params": {"ef": 64}},
@@ -391,6 +452,12 @@ async def query_rag(
             expr=f"document_id == {doc_id}",
             output_fields=["page_number", "parent_text", "child_text"]
         )
+    
+    search_results = await asyncio.gather(*[asyncio.to_thread(search_milvus_sync, qv) for qv in query_vectors])
+    
+    retrieved_items = []
+    seen_parents = set()
+    for search_res in search_results:
         if len(search_res) > 0:
             for match in search_res[0]:
                 parent_txt = match.entity.get("parent_text")
@@ -490,48 +557,52 @@ async def query_rag(
         )
         draft_result = response.text
     
-    # Audit & Final Polish by DeepSeek (deepseek-chat) with Gemini fallback
-    audit_prompt = (
-        f"You are a Senior Financial Audit Agent. Review the following draft report against the original source context. "
-        f"Ensure that all dates, financial numbers, margins, and page references match the source exactly. "
-        f"Correct any misstatements or formatting gaps.\n\n"
-        f"IMPORTANT CITATION AUDIT:\n"
-        f"1. Make sure every single number, percentage, and date has a superscript footnote indicator (e.g., <sup>1</sup>, <sup>2</sup>).\n"
-        f"2. Validate that NO page numbers other than those in the retrieved context are cited. Correct any hallucinated page numbers.\n"
-        f"3. Strip out any external tax forms (such as IRS Form 8621), tax rates, or law details that are not explicitly present in the retrieved context to maintain 100% faithfulness.\n"
-        f"4. Ensure the 'Citations / References' section at the end is present, sequential, and formatted exactly as:\n"
-        f"   [Footnote Number] New Oriental Education & Technology Group Inc., Annual Report (Form 20-F) for the Fiscal Year Ended May 31, 2025, at Page [Number].\n\n"
-        f"Output the final polished report in {target_lang}.\n\n"
-        f"[SOURCE CONTEXT]:\n{retrieved_context}\n\n"
-        f"[DRAFT REPORT]:\n{draft_result}"
-    )
-    
-    final_report = None
-    if DEEPSEEK_API_KEY:
-        try:
-            logger.info("Performing audit & polish using DeepSeek Chat...")
-            final_report = call_deepseek(audit_prompt, model="deepseek-chat")
-        except Exception as ds_err:
-            logger.warning(f"DeepSeek Chat audit failed: {ds_err}. Falling back to Gemini 2.5 Pro...")
-            if API_KEY:
-                try:
-                    pro_response = client.models.generate_content(
-                        model="gemini-2.5-pro",
-                        contents=audit_prompt
-                    )
-                    final_report = pro_response.text
-                except Exception as gemini_err:
-                    logger.error(f"Gemini audit fallback also failed: {gemini_err}")
-                    raise ds_err
-            else:
-                raise ds_err
+    # Audit & Final Polish — SKIP for quick mode (saves ~15s)
+    if analysis_type == "quick":
+        logger.info("Quick mode: skipping audit stage for faster output.")
+        final_report = draft_result
     else:
-        logger.info("Cascading to Gemini 2.5 Pro for Auditor sanity check & factual verification...")
-        pro_response = client.models.generate_content(
-            model="gemini-2.5-pro",
-            contents=audit_prompt
+        audit_prompt = (
+            f"You are a Senior Financial Audit Agent. Review the following draft report against the original source context. "
+            f"Ensure that all dates, financial numbers, margins, and page references match the source exactly. "
+            f"Correct any misstatements or formatting gaps.\n\n"
+            f"IMPORTANT CITATION AUDIT:\n"
+            f"1. Make sure every single number, percentage, and date has a superscript footnote indicator (e.g., <sup>1</sup>, <sup>2</sup>).\n"
+            f"2. Validate that NO page numbers other than those in the retrieved context are cited. Correct any hallucinated page numbers.\n"
+            f"3. Strip out any external tax forms (such as IRS Form 8621), tax rates, or law details that are not explicitly present in the retrieved context to maintain 100% faithfulness.\n"
+            f"4. Ensure the 'Citations / References' section at the end is present, sequential, and formatted exactly as:\n"
+            f"   [Footnote Number] New Oriental Education & Technology Group Inc., Annual Report (Form 20-F) for the Fiscal Year Ended May 31, 2025, at Page [Number].\n\n"
+            f"Output the final polished report in {target_lang}.\n\n"
+            f"[SOURCE CONTEXT]:\n{retrieved_context}\n\n"
+            f"[DRAFT REPORT]:\n{draft_result}"
         )
-        final_report = pro_response.text
+        
+        final_report = None
+        if DEEPSEEK_API_KEY:
+            try:
+                logger.info("Performing audit & polish using DeepSeek Chat...")
+                final_report = call_deepseek(audit_prompt, model="deepseek-chat")
+            except Exception as ds_err:
+                logger.warning(f"DeepSeek Chat audit failed: {ds_err}. Falling back to Gemini 2.5 Pro...")
+                if API_KEY:
+                    try:
+                        pro_response = client.models.generate_content(
+                            model="gemini-2.5-pro",
+                            contents=audit_prompt
+                        )
+                        final_report = pro_response.text
+                    except Exception as gemini_err:
+                        logger.error(f"Gemini audit fallback also failed: {gemini_err}")
+                        raise ds_err
+                else:
+                    raise ds_err
+        else:
+            logger.info("Cascading to Gemini 2.5 Pro for Auditor sanity check & factual verification...")
+            pro_response = client.models.generate_content(
+                model="gemini-2.5-pro",
+                contents=audit_prompt
+            )
+            final_report = pro_response.text
     
     logger.info("LangGraph agent loop successfully completed.")
 
@@ -558,6 +629,246 @@ async def query_rag(
             logger.error(f"Failed to update semantic cache store: {e}")
 
     return output_data
+
+# --- Streaming SSE Endpoint ---
+
+async def _build_rag_context(filename: str, analysis_type: str, language: str):
+    """Shared helper: retrieves context, builds prompts. Returns (final_prompt, audit_prompt_template, citations, retrieved_context, target_query, target_lang, query_vector, cache_collection)"""
+    query_text_map = {
+        "comprehensive": (
+            "You are a Lead Equity Research Analyst preparing an institutional-grade investment memorandum. Structure the report exactly as follows:\n"
+            "1. **EXECUTIVE SUMMARY & INVESTMENT THESIS**: State the investment rating (Buy/Hold/Sell) and the core qualitative justification.\n"
+            "2. **FINANCIAL PERFORMANCE & TREND AUDIT**: Analyze revenues, operational margins, and cash flow trends. Use markdown tables to compare fiscal years.\n"
+            "3. **KEY INVESTMENT RISKS & MITIGATION**: Graded analysis (High/Medium/Low impact) of regulatory, competitive, and operational risks.\n"
+            "4. **VALUATION & CAPITAL STRUCTURE AUDIT**: Analyze long-term investments, Level 3 asset valuations, and tax considerations (e.g., PFIC classification status).\n"
+            "5. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
+        ),
+        "compliance": (
+            "You are a Chief Compliance Officer preparing a regulatory audit report. Structure the report exactly as follows:\n"
+            "1. **COMPLIANCE EXECUTIVE SUMMARY**: Overall compliance risk warning rating (High/Medium/Low Risk) and summary.\n"
+            "2. **LITIGATION & INTELLECTUAL PROPERTY AUDIT**: Detail copyright disputes, historical judgements (e.g. GMAC/ETS case), damages paid, and policy gaps.\n"
+            "3. **REGULATORY POLICY & SHIFT IMPACTS**: Analyze the impact of private education regulation changes on business transformation.\n"
+            "4. **TAX COMPLIANCE & PFIC STATUS DISCLOSURE**: Detail the PFIC classification, tests (asset/income tests), and IRS implications for US investors.\n"
+            "5. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
+        ),
+        "quick": (
+            "You are a Senior Investment Analyst providing a high-speed brief for executive leadership (CEO/CFO). Structure the report exactly as follows:\n"
+            "1. **EXECUTIVE ACTIONS & RECOMMENDATIONS**: One-sentence core thesis.\n"
+            "2. **KEY FINANCIAL HIGHLIGHTS**: Bullet points of key revenue growth and margins.\n"
+            "3. **IMMINENT RISK ALERTS**: Two major risk issues that cannot be ignored.\n"
+            "4. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
+        )
+    }
+    target_query = query_text_map.get(analysis_type, "Analyze this report")
+    
+    # Embed query
+    emb_query_res = client.models.embed_content(
+        model="gemini-embedding-2",
+        contents=target_query,
+        config=types.EmbedContentConfig(output_dimensionality=768)
+    )
+    query_vector = emb_query_res.embeddings[0].values
+    
+    # Check semantic cache
+    cache_collection = init_cache_collection()
+    search_params = {"metric_type": "COSINE", "params": {}}
+    cache_results = cache_collection.search(
+        data=[query_vector], anns_field="embedding", param=search_params,
+        limit=1, output_fields=["cache_key", "query_text"]
+    )
+    if len(cache_results) > 0 and len(cache_results[0]) > 0:
+        match = cache_results[0][0]
+        if match.distance >= 0.97 and redis_client:
+            cached_data = redis_client.get(match.entity.get("cache_key"))
+            if cached_data:
+                return None  # Signal: cache hit
+    
+    # Retrieve doc_id
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id FROM documents WHERE filename = %s;", (filename,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Document not found.")
+        doc_id = row[0]
+    finally:
+        cur.close()
+        conn.close()
+    
+    lang_map = {"en": "English", "zh_cn": "Simplified Chinese (简体中文)", "zh_hk": "Traditional Chinese (繁體中文)"}
+    target_lang = lang_map.get(language, "English")
+    
+    # Parallel retrieval
+    get_milvus_connection()
+    collection = Collection("stock_analysis_chunks")
+    sub_queries = [
+        target_query,
+        "新东方核心教育业务转型与营收业绩表现 东方甄选直播电商与与辉同行剥离",
+        "新东方历史知识产权纠纷 ETS GMAC 侵权诉讼判决与合规政策漏洞",
+        "新东方 PFIC 被动外国投资公司状态 资产测试 收入测试 美国投资者税务影响 长期投资公允价值变动 Level 3 资产减值"
+    ]
+    
+    async def embed_single(sq):
+        try:
+            emb_res = await asyncio.to_thread(
+                client.models.embed_content, model="gemini-embedding-2",
+                contents=sq, config=types.EmbedContentConfig(output_dimensionality=768)
+            )
+            return emb_res.embeddings[0].values
+        except Exception:
+            return None
+    
+    embedding_results = await asyncio.gather(*[embed_single(sq) for sq in sub_queries])
+    q_vectors = [v for v in embedding_results if v is not None] or [query_vector]
+    
+    def search_sync(qv):
+        return collection.search(
+            data=[qv], anns_field="embedding",
+            param={"metric_type": "COSINE", "params": {"ef": 64}},
+            limit=3, expr=f"document_id == {doc_id}",
+            output_fields=["page_number", "parent_text", "child_text"]
+        )
+    search_results = await asyncio.gather(*[asyncio.to_thread(search_sync, qv) for qv in q_vectors])
+    
+    retrieved_items = []
+    seen_parents = set()
+    for sr in search_results:
+        if len(sr) > 0:
+            for m in sr[0]:
+                pt = m.entity.get("parent_text")
+                if pt not in seen_parents:
+                    seen_parents.add(pt)
+                    retrieved_items.append({"page_number": m.entity.get("page_number"), "parent_text": pt})
+    
+    retrieved_context = ""
+    citations = []
+    for item in retrieved_items:
+        page = item["page_number"]
+        parent_txt = item["parent_text"]
+        retrieved_context += f"\n--- [Page {page}] ---\n{parent_txt}\n"
+        citations.append({"chunk_index": page, "text": f"Page {page}: " + parent_txt[:200].strip() + "..."})
+    
+    # Build prompts
+    language_instruction = f"IMPORTANT: The user has selected {target_lang} as their preferred language. You MUST generate the entire report in {target_lang}. Use professional financial terminology."
+    
+    struct_map = {
+        "comprehensive": "You are a Lead Equity Research Analyst preparing an institutional-grade investment memorandum for executive leadership. The report must be highly professional, avoiding generic filler, and structured exactly as follows:\n\n1. **EXECUTIVE SUMMARY & INVESTMENT THESIS**: State the rating (Buy/Hold/Sell) and the core justification.\n2. **FINANCIAL PERFORMANCE & TREND AUDIT**: Analyze revenues, margins, and cash flow trends. Use tables if appropriate.\n3. **KEY INVESTMENT RISKS & MITIGATION**: Graded analysis of regulatory, competitive, and operational risks.\n4. **VALUATION & CAPITAL STRUCTURE AUDIT**: Deep dive into long-term investments, Level 3 asset valuations, and tax considerations (e.g., PFIC status).\n5. **CITATIONS / REFERENCES**: List all footnote citations sequentially.",
+        "compliance": "You are a Chief Compliance Officer preparing a regulatory audit report. The report must be highly professional, focusing strictly on risks and compliance framework, and structured exactly as follows:\n\n1. **COMPLIANCE EXECUTIVE SUMMARY**: Overall compliance risk warning rating (High/Medium/Low Risk) and summary.\n2. **LITIGATION & INTELLECTUAL PROPERTY AUDIT**: Detail copyright disputes, historical judgements (e.g. GMAC/ETS case), damages paid, and policy gaps.\n3. **REGULATORY POLICY & SHIFT IMPACTS**: Analyze the impact of private education regulation changes on business transformation.\n4. **TAX COMPLIANCE & PFIC STATUS DISCLOSURE**: Detail the PFIC classification, tests (asset/income tests), and IRS implications for US investors.\n5. **CITATIONS / REFERENCES**: List all footnote citations sequentially.",
+        "quick": "You are a Senior Investment Analyst providing a high-speed brief for executive leadership (CEO/CFO). The brief must be extremely concise, bulleted, and structured exactly as follows:\n\n1. **EXECUTIVE ACTIONS & RECOMMENDATIONS**: One-sentence core rating and actionable recommendation.\n2. **KEY FINANCIAL HIGHLIGHTS**: Bullet points of key revenue growth and margins.\n3. **IMMINENT RISK ALERTS**: Two major risk issues that cannot be ignored.\n4. **CITATIONS / REFERENCES**: List all footnote citations sequentially."
+    }
+    struct_instructions = struct_map.get(analysis_type, "")
+    
+    final_prompt = (
+        f"{language_instruction}\n\n{target_query}\n\n"
+        f"IMPORTANT PROFESSIONAL FINANCIAL REPORTING INSTRUCTIONS:\n{struct_instructions}\n\n"
+        f"STRICT CITATION CONSTRAINTS (CRITICAL FOR FAITHFULNESS):\n"
+        f"- You MUST ONLY use the facts, figures, and page numbers present in the [RETRIEVED DATA] block below.\n"
+        f"- DO NOT introduce any external regulatory codes, tax form numbers, or specific tax rates UNLESS they are explicitly written in the [RETRIEVED DATA] below.\n"
+        f"- For every financial figure, percentage, rate, date, or specific claim, you MUST append a sequential superscript footnote indicator.\n"
+        f"- Format every citation exactly as: [Footnote Number] New Oriental Education & Technology Group Inc., Annual Report (Form 20-F) for the Fiscal Year Ended May 31, 2025, at Page [Number].\n\n"
+        f"[RETRIEVED DATA FROM SEC 10-K FILING]:\n{retrieved_context}"
+    )
+    
+    return {
+        "final_prompt": final_prompt,
+        "citations": citations,
+        "retrieved_context": retrieved_context,
+        "target_query": target_query,
+        "target_lang": target_lang,
+        "query_vector": query_vector,
+        "cache_collection": cache_collection,
+        "analysis_type": analysis_type
+    }
+
+@app.post("/query/stream")
+async def query_rag_stream(
+    filename: str = Form(...),
+    analysis_type: str = Form(...),
+    language: str = Form(...)
+):
+    """Streaming SSE endpoint — tokens are pushed to client as they are generated"""
+    if not DEEPSEEK_API_KEY:
+        raise HTTPException(status_code=500, detail="Streaming requires DeepSeek API Key")
+    
+    start_time = time.time()
+    ctx = await _build_rag_context(filename, analysis_type, language)
+    
+    if ctx is None:
+        # Cache hit — not streamable, redirect to regular endpoint
+        raise HTTPException(status_code=307, detail="Cache hit. Use /query endpoint.")
+    
+    final_prompt = ctx["final_prompt"]
+    citations = ctx["citations"]
+    retrieved_context = ctx["retrieved_context"]
+    target_query = ctx["target_query"]
+    target_lang = ctx["target_lang"]
+    query_vector = ctx["query_vector"]
+    cache_collection = ctx["cache_collection"]
+    
+    async def sse_generator() -> AsyncGenerator[str, None]:
+        full_text = ""
+        
+        if analysis_type == "quick":
+            # Quick mode: stream draft directly, no audit
+            logger.info("[Stream] Quick mode: streaming draft directly...")
+            async for chunk in stream_deepseek(final_prompt):
+                full_text += chunk
+                yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+        else:
+            # Draft stage: stream to client
+            logger.info("[Stream] Streaming draft generation...")
+            draft_text = ""
+            yield f"data: {json.dumps({'type': 'stage', 'content': 'draft'})}\n\n"
+            async for chunk in stream_deepseek(final_prompt):
+                draft_text += chunk
+                yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+            
+            # Audit stage: stream the polished version
+            yield f"data: {json.dumps({'type': 'stage', 'content': 'audit'})}\n\n"
+            logger.info("[Stream] Streaming audit & polish...")
+            audit_prompt = (
+                f"You are a Senior Financial Audit Agent. Review the following draft report against the original source context. "
+                f"Ensure that all dates, financial numbers, margins, and page references match the source exactly. "
+                f"Correct any misstatements or formatting gaps.\n\n"
+                f"IMPORTANT CITATION AUDIT:\n"
+                f"1. Make sure every number, percentage, and date has a superscript footnote.\n"
+                f"2. Validate that NO page numbers other than those in the retrieved context are cited.\n"
+                f"3. Strip out any external tax forms or law details not in the retrieved context.\n"
+                f"4. Ensure the 'Citations / References' section is present and sequential.\n\n"
+                f"Output the final polished report in {target_lang}.\n\n"
+                f"[SOURCE CONTEXT]:\n{retrieved_context}\n\n"
+                f"[DRAFT REPORT]:\n{draft_text}"
+            )
+            async for chunk in stream_deepseek(audit_prompt):
+                full_text += chunk
+                yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+        
+        # Cache the final result
+        if not full_text:
+            full_text = draft_text if 'draft_text' in dir() else ""
+        final_text = full_text
+        output_data = {
+            "analysis": final_text,
+            "citations": citations,
+            "retrieved_context": retrieved_context,
+            "cache_hit": False,
+            "inference_time_ms": int((time.time() - start_time) * 1000)
+        }
+        new_cache_key = f"analysis_cache_store:{uuid.uuid4()}"
+        if redis_client:
+            try:
+                redis_client.setex(new_cache_key, 7200, json.dumps(output_data))
+                cache_collection.insert([[target_query], [new_cache_key], [query_vector]])
+                cache_collection.flush()
+                logger.info(f"[Stream] Cached results: {new_cache_key}")
+            except Exception as e:
+                logger.error(f"[Stream] Cache write failed: {e}")
+        
+        # Send final metadata event
+        yield f"data: {json.dumps({'type': 'done', 'inference_time_ms': int((time.time() - start_time) * 1000), 'citations': citations})}\n\n"
+    
+    return StreamingResponse(sse_generator(), media_type="text/event-stream")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8001)

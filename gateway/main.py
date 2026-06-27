@@ -4,7 +4,7 @@ import httpx
 import uvicorn
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 
 # --- 0. Logging Configuration ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -98,6 +98,43 @@ async def analyze_document(
             logger.error(f"Error querying RAG Engine: {e}")
             raise HTTPException(status_code=502, detail=f"Query to RAG Engine failed: {str(e)}")
 
+@app.post("/analyze/stream")
+async def analyze_document_stream(
+    file: UploadFile = File(...),
+    analysis_type: str = Form(...),
+    language: str = Form(...)
+):
+    """Streaming endpoint — ingests then streams SSE tokens from Engine"""
+    logger.info(f"Gateway streaming request: {file.filename} | Type: {analysis_type} | Lang: {language}")
+
+    # Step 1: Ingest (non-streaming, must complete first)
+    async with httpx.AsyncClient(timeout=600.0) as client:
+        try:
+            file_bytes = await file.read()
+            files = {"file": (file.filename, file_bytes, file.content_type)}
+            ingest_resp = await client.post(f"{ENGINE_URL}/ingest", files=files)
+            if ingest_resp.status_code != 200:
+                raise HTTPException(status_code=ingest_resp.status_code, detail=f"Ingestion Failed: {ingest_resp.text}")
+            logger.info("Ingestion complete. Starting streaming query...")
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=502, detail=f"Cannot reach RAG Engine: {str(e)}")
+
+    # Step 2: Stream from Engine's /query/stream endpoint
+    async def stream_passthrough():
+        async with httpx.AsyncClient(timeout=600.0) as client:
+            query_data = {"filename": file.filename, "analysis_type": analysis_type, "language": language}
+            async with client.stream("POST", f"{ENGINE_URL}/query/stream", data=query_data) as resp:
+                if resp.status_code != 200:
+                    error_body = await resp.aread()
+                    yield f"data: {error_body.decode()}\\n\\n"
+                    return
+                async for line in resp.aiter_lines():
+                    if line:
+                        yield f"{line}\n\n"
+
+    return StreamingResponse(stream_passthrough(), media_type="text/event-stream")
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
