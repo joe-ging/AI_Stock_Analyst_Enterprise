@@ -136,9 +136,17 @@ sequenceDiagram
 
 ## 🔹 5. Objective Auditing with Ragas (Hallucination Prevention)
 
-In the financial sector, hallucinations are unacceptable. After the async LLM streaming completes, the system triggers a background audit using **Ragas (Retrieval Augmented Generation Assessment)**—an open-source framework specifically designed to evaluate RAG pipelines.
+In the financial sector, hallucinations are unacceptable. We have integrated **Ragas (Retrieval Augmented Generation Assessment)** directly into our CI/CD pipeline as a mandatory **Quality Gate** before any deployment.
 
-The Ragas Auditor acts as a deterministic judge, comparing the LLM's generated draft strictly against the original SEC text chunks retrieved from Milvus.
+### Automated CI/CD Quality Gate Workflow
+During the GitHub Actions pipeline, the system spins up a localized Docker environment and executes `run_eval.py`. It simulates deterministic institutional queries (e.g., *“Provide a comprehensive memo analyzing core business transformation, portfolio risks, and PFIC tax compliance.”*).
+
+The Ragas Auditor acts as a strict judge, comparing the LLM's generated draft against the original SEC text chunks retrieved from Milvus. It enforces hard quantitative thresholds:
+1. **Faithfulness (Required > 0.85)**: Ensures the generated report is strictly derived from the retrieved context. If the LLM hallucinates unverified numbers, the score drops, and the CI build **fails immediately**.
+2. **Context Precision (Required > 0.75)**: Ensures the retrieved Milvus chunks actually contain the necessary facts to answer the specific financial query.
+3. **Answer Relevance**: Ensures the response does not deviate into unrelated topics.
+
+Only if all quantitative thresholds are passed will the pipeline proceed to push to the Tencent Cloud production server.
 
 ```mermaid
 graph TD
