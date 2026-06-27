@@ -1139,7 +1139,16 @@ async def query_rag_stream(
         # --- Compile Footnotes and Citations at the end of the Draft ---
         logger.info("[Stream] Compiling citations and footnotes...")
         
-        def compile_footnotes(text: str, filename_val: str) -> tuple[str, list[dict]]:
+        # Try to resolve CIK for modern SEC EDGAR UI link
+        resolved_cik = None
+        if ctx_filename.startswith("EDGAR:"):
+            try:
+                from engine.edgar_fetcher import get_cik
+                resolved_cik = await get_cik(ctx_filename.split(":")[1])
+            except Exception as e:
+                logger.warning(f"[Stream] Could not resolve CIK for source url: {e}")
+        
+        def compile_footnotes(text: str, filename_val: str, cik: str = None) -> tuple[str, list[dict]]:
             import re
             # Match patterns like [Page 15], [Page 15-16], [Page F-60]
             pattern = r'\[Page\s+([A-Za-z0-9–\-]+)\]'
@@ -1196,7 +1205,10 @@ async def query_rag_stream(
             source_url = ""
             if filename_val.startswith("EDGAR:"):
                 extracted_ticker = filename_val.split(":")[1]
-                source_url = f"https://www.sec.gov/edgar/browse/?CIK={extracted_ticker}"
+                if cik:
+                    source_url = f"https://www.sec.gov/edgar/browse/?CIK={cik}"
+                else:
+                    source_url = f"https://www.sec.gov/cgi-bin/browse-edgar?CIK={extracted_ticker}&action=getcompany"
                 
             if unique_pages:
                 ref_list.append("\n\n---\n\n### 📚 CITATIONS / REFERENCES\n")
@@ -1217,7 +1229,7 @@ async def query_rag_stream(
             return final_report, compiled_citations
 
         # Process the final report text and generate clean citations
-        final_report_text, compiled_citations = compile_footnotes(full_text, ctx_filename)
+        final_report_text, compiled_citations = compile_footnotes(full_text, ctx_filename, resolved_cik)
         
         # Override citations array for metadata return
         if compiled_citations:
