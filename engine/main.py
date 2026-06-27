@@ -485,7 +485,9 @@ async def health():
 
 @app.post("/ingest")
 async def ingest_document(file: UploadFile = File(...)):
-    if not API_KEY:
+    if EMBEDDING_PROVIDER == "openainext" and not OPENAINEXT_API_KEY:
+        raise HTTPException(status_code=500, detail="OpenAINext API Key missing on Engine")
+    elif EMBEDDING_PROVIDER == "gemini" and not API_KEY:
         raise HTTPException(status_code=500, detail="Gemini API Key missing on Engine")
 
     logger.info(f"Ingest endpoint hit for: {file.filename}")
