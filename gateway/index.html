@@ -219,7 +219,7 @@
                         return;
                     }
                     formData.append('ticker', ticker.toUpperCase());
-                    formData.append('years', JSON.stringify(selectedYears));
+                    formData.append('years', selectedYears.join(','));
                 }
 
                 if (window.isAnalyzingInProgress) {
