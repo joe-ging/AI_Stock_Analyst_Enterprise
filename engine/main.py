@@ -583,8 +583,7 @@ async def query_rag(
     async def embed_single(sq):
         # Parallel sub-query embedding via standard REST API
         proxy_url = os.environ.get("HTTP_PROXY") or os.environ.get("ALL_PROXY")
-        proxy_url_clean = proxy_url.replace("socks5h://", "socks5://") if proxy_url else None
-        transport_proxy = {"all://": proxy_url_clean} if proxy_url_clean else None
+        transport_proxy = {"all://": proxy_url} if proxy_url else None
         
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent?key={API_KEY}"
         payload = {
@@ -752,8 +751,7 @@ async def _build_rag_context(filename: str, analysis_type: str, language: str):
     logger.info(f"[DEBUG] _build_rag_context: Query template found, embedding query text: {target_query[:60]}...")
     # Embed query via standard REST API over proxy
     proxy_url = os.environ.get("HTTP_PROXY") or os.environ.get("ALL_PROXY")
-    proxy_url_clean = proxy_url.replace("socks5h://", "socks5://") if proxy_url else None
-    transport_proxy = {"all://": proxy_url_clean} if proxy_url_clean else None
+    transport_proxy = {"all://": proxy_url} if proxy_url else None
     
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent?key={API_KEY}"
     payload = {
