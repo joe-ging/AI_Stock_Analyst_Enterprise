@@ -1,12 +1,23 @@
 import asyncio
 import os
 import sys
-from main import _build_rag_context, _generate_report, get_db_connection, get_milvus_connection
+
+# Change directory context so python can find modules
+sys.path.append("/app")
+
+from main import (
+    get_db_connection, 
+    get_milvus_connection, 
+    build_final_prompt, 
+    call_deepseek, 
+    REPORT_TEMPLATES, 
+    GENERIC_SUB_QUERIES,
+    client
+)
 from pymilvus import connections, Collection
 
 # Ensure config environment variables
 os.environ["DEEPSEEK_API_KEY"] = "sk-8c8956265b5f482bb32c1fc6c8878d72"
-os.environ["GEMINI_API_KEY"] = "AIzaSy..." # Loaded from environment on container
 
 async def generate_all():
     # Setup connection
@@ -28,39 +39,98 @@ async def generate_all():
     doc_id = row[0]
     print(f"Using doc_id: {doc_id} for document {filename}")
     
-    # 2. Setup standard facets for query context
-    # Use standard facets to represent a thorough equity research analysis
-    facets = [
-        "Company overview, mission, history, core business segments, and main revenue drivers",
-        "Financial performance, historical revenue growth, operating margins, EBITDA, and free cash flow trend",
-        "Major operational risk factors, litigation, compliance issues, regulatory impact, and PFIC status",
-        "Comparable valuation metrics, target price derivation, DCF model logic, and comparable comps multiple",
-        "Management team profiles, corporate governance policies, executive compensation, and strategic vision"
-    ]
-    
-    # 3. Retrieve RAG context via parallel sub-queries
-    print("Retrieving semantic contexts from Milvus...")
-    rag_context = await _build_rag_context(doc_id, facets)
-    print(f"RAG Context retrieved. Total characters: {len(rag_context)}")
-    
-    # 4. Generate all 9 variants (3 types * 3 languages)
     analysis_types = ["comprehensive", "compliance", "quick"]
-    languages = ["en", "zh_cn", "zh_tw"]
+    languages = ["en", "zh_cn", "zh_hk"]
     
+    # We will retrieve contexts for each analysis type because each has different prompt queries
     for atype in analysis_types:
-        for lang in languages:
-            print(f"\n=========================================")
-            print(f"REPORT TYPE: {atype.upper()} | LANGUAGE: {lang.upper()}")
-            print(f"=========================================\n")
+        template = REPORT_TEMPLATES[atype]
+        target_query = template["query"]
+        struct_instructions = template["struct"]
+        
+        # Parallel sub-query embedding via asyncio
+        sub_queries = [target_query] + GENERIC_SUB_QUERIES
+        
+        print(f"\nEmbedding sub-queries for analysis type: {atype}...")
+        
+        async def embed_single(sq: str):
+            try:
+                emb_res = await asyncio.to_thread(
+                    client.models.embed_content,
+                    model="gemini-embedding-2",
+                    contents=sq,
+                    config=client.models.embed_content.__code__.co_varnames # Dummy config placeholder or direct call
+                )
+                return emb_res.embeddings[0].values
+            except Exception as e:
+                # Direct fallback or simple call
+                from google.genai import types
+                emb_res = client.models.embed_content(
+                    model="gemini-embedding-2",
+                    contents=sq,
+                    config=types.EmbedContentConfig(output_dimensionality=768)
+                )
+                return emb_res.embeddings[0].values
+
+        query_vectors = []
+        for sq in sub_queries:
+            vec = await embed_single(sq)
+            query_vectors.append(vec)
             
-            # Run generator
-            report = ""
-            async for chunk in _generate_report(rag_context, atype, lang):
-                report += chunk
-                # Print output to terminal in real time
-                sys.stdout.write(chunk)
-                sys.stdout.flush()
-            print("\n")
+        collection = Collection("stock_analysis_chunks")
+        collection.load()
+        
+        def search_milvus_sync(q_vec):
+            return collection.search(
+                data=[q_vec],
+                anns_field="embedding",
+                param={"metric_type": "COSINE", "params": {"ef": 64}},
+                limit=3,
+                expr=f"document_id == {doc_id}",
+                output_fields=["page_number", "parent_text", "child_text"]
+            )
+        
+        search_results = await asyncio.gather(*[asyncio.to_thread(search_milvus_sync, qv) for qv in query_vectors])
+        
+        retrieved_items = []
+        seen_parents = set()
+        for search_res in search_results:
+            if len(search_res) > 0:
+                for match in search_res[0]:
+                    parent_txt = match.entity.get("parent_text")
+                    if parent_txt not in seen_parents:
+                        seen_parents.add(parent_txt)
+                        retrieved_items.append({
+                            "page_number": match.entity.get("page_number"),
+                            "parent_text": parent_txt
+                        })
+        
+        retrieved_context = ""
+        for item in retrieved_items:
+            page = item["page_number"]
+            parent_txt = item["parent_text"]
+            retrieved_context += f"\n--- [Page {page}] ---\n{parent_txt}\n"
+
+        lang_map = {
+            "en": "English",
+            "zh_cn": "Simplified Chinese (简体中文)",
+            "zh_hk": "Traditional Chinese (繁體中文)"
+        }
+        
+        for lang in languages:
+            target_lang = lang_map[lang]
+            print(f"\n=======================================================")
+            print(f"REPORT TYPE: {atype.upper()} | LANGUAGE: {target_lang.upper()}")
+            print(f"=======================================================\n")
+            
+            final_prompt = build_final_prompt(target_query, struct_instructions, retrieved_context, target_lang, filename)
+            
+            # Direct Call DeepSeek
+            try:
+                report_content = call_deepseek(final_prompt, model="deepseek-chat")
+                print(report_content)
+            except Exception as e:
+                print(f"DeepSeek call failed: {e}")
 
 if __name__ == "__main__":
     asyncio.run(generate_all())
