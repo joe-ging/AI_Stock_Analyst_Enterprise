@@ -18,9 +18,9 @@ Our system is decoupled into specialized microservices, avoiding monolithic bott
 
 ### Core Tech Stack:
 - **API Gateway & Core Engine**: FastAPI (Python 3.10) - utilizing `async`/`await` for non-blocking I/O.
-- **Document Parsing**: `pdfplumber` (for precise layout and SEC financial table extraction).
-- **Message Broker & Workers**: RabbitMQ & Celery (for distributing CPU-heavy parsing tasks).
-- **Polyglot Persistence (Databases)**:
+- **Document Parsing Strategy**: We evaluated heavy OCR AI models (like **Docling**), but rejected them because they were prohibitively slow, models were too large, and they consumed excessive CPU/RAM. Instead, we actively selected **`pdfplumber`** for its lightning-fast, resource-efficient, and highly precise extraction of SEC financial tables.
+- **Message Broker & Workers**: RabbitMQ & Celery (for distributing parsing tasks).
+- **Databases**:
   - **PostgreSQL**: Relational metadata and document state tracking.
   - **Milvus (Standalone)**: High-dimensional vector storage.
   - **Redis**: In-memory semantic caching and task state management.
@@ -29,13 +29,13 @@ Our system is decoupled into specialized microservices, avoiding monolithic bott
   
   1. **Phase 1: Embedding & Vectorization (User Queries & SEC Data)**
      - *Role*: This phase is responsible for converting massive text chunks from SEC documents into dense vectors during ingestion, as well as embedding the user's question during the hybrid search process. 
-     - *Primary Model*: **OpenAINext (`text-embedding-3-small`)**. Chosen for its industry-leading semantic clustering capabilities. (Note: DeepSeek is not used here as it lacks native embedding endpoints in our setup).
-     - *Fallback Model*: **Gemini Embeddings**. If the OpenAINext API experiences rate limiting or downtime, the system seamlessly falls back to Gemini to ensure zero interruption in data ingestion or user queries.
+     - *Primary Model*: **OpenAINext (`text-embedding-3-small`)**. Chosen specifically for its high-granularity output (**1536 dimensions**). Compared to Gemini's 768 dimensions, this higher dimensionality provides significantly greater precision during semantic retrieval. (Note: DeepSeek is not used here as it lacks native embedding endpoints in our setup).
+     - *Fallback Model*: **Gemini Embeddings** (768 dimensions). If the OpenAINext API experiences rate limiting or downtime, the system seamlessly falls back to Gemini to ensure zero interruption.
   
   2. **Phase 2: Generation & Reasoning (Inference)**
      - *Role*: After retrieving the most relevant contexts from the Milvus vector database, this phase is responsible for synthesizing the data and streaming the final analytical report back to the user.
-     - *Primary Model*: **DeepSeek-Chat**. Selected for its unmatched reasoning capabilities and cost-efficiency when generating comprehensive financial reports.
-     - *Fallback Model*: **Gemini 2.5 Pro**. If DeepSeek's API crashes (HTTP 500) or is throttled (HTTP 429), our LLM Cascade mechanism dynamically routes the streaming request to Gemini, ensuring high availability and fault tolerance.
+     - *Primary Model*: **DeepSeek-Chat**. Selected because it is exceptionally cost-effective and fast for heavy reasoning tasks. Gemini, by contrast, is significantly more expensive, blocks Hong Kong servers, and exhibits higher latency.
+     - *Fallback Model*: **Gemini 2.5 Pro**. If DeepSeek's API crashes (HTTP 500) or is throttled (HTTP 429), our LLM Cascade mechanism dynamically routes the streaming request to Gemini to guarantee high availability.
 
   - **Orchestration**: Custom LangChain-style async pipelines with LangGraph-inspired routing loops. Enables complex, cyclic routing loops for the Ragas auditor.
 
@@ -104,9 +104,9 @@ Due to Gemini API's strict regional blocking in Hong Kong, the initial architect
 
 ---
 
-## 🔹 4. Polyglot Persistence (Database Optimization)
+## 🔹 4. Database Architecture (Optimization & Synergies)
 
-We utilize a combination of purpose-built databases (**Polyglot Persistence**) rather than forcing a single monolith DB to handle all workloads. This prevents locking and ensures specific bottlenecks are handled optimally:
+We utilize a combination of purpose-built databases rather than forcing a single monolith DB to handle all workloads. This prevents locking and ensures specific bottlenecks are handled optimally:
 
 | Component | Technology | Primary Role | Why we chose it (vs Alternatives) | Optimization Strategy |
 | :--- | :--- | :--- | :--- | :--- |
