@@ -183,8 +183,7 @@ proxy_env = os.environ.get("HTTP_PROXY") or os.environ.get("ALL_PROXY")
 if proxy_env:
     proxy_url = proxy_env.replace("socks5h://", "socks5://")
     logger.info(f"Initializing GenAI Client with explicit proxy: {proxy_url}")
-    http_client = httpx.Client(proxies=proxy_url, timeout=60.0)
-    client = genai.Client(api_key=API_KEY, http_client=http_client)
+    client = genai.Client(api_key=API_KEY, http_options={"proxy": proxy_url})
 else:
     client = genai.Client(api_key=API_KEY)
 
