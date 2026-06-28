@@ -7,7 +7,7 @@
 
 > 专为机构投资者打造的 AI 驱动的 SEC 财报分析工具。基于生产级微服务架构构建，全面强调 **100% 异步并发处理**、多模态数据库协同优化，以及严格的 Ragas 事实客观审计。
 
-**在线演示：** [JL Intelligence](https://jl-intelligence.netlify.app/)
+**在线演示：** [JL Intelligence (腾讯云企业级节点)](http://43.129.249.161/)
 **核心技术栈：** React · FastAPI · Milvus · Redis · Celery/RabbitMQ · DeepSeek / Gemini
 
 ---

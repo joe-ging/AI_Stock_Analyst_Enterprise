@@ -7,7 +7,7 @@
 
 > AI-powered SEC financial analysis tool for institutional investors. Built with a production-ready microservices architecture, emphasizing **100% asynchronous concurrency**, multi-modal database optimization, and strict Ragas objective auditing.
 
-**Live Demo:** [JL Intelligence](https://jl-intelligence.netlify.app/)
+**Live Demo:** [JL Intelligence (Tencent Enterprise Server)](http://43.129.249.161/)
 **Core Stack:** React · FastAPI · Milvus · Redis · Celery/RabbitMQ · DeepSeek / Gemini
 
 ---
