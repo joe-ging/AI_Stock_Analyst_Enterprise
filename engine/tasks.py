@@ -23,7 +23,7 @@ CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://cache:6
 celery_app = Celery("tasks", broker=CELERY_BROKER_URL, backend=CELERY_RESULT_BACKEND)
 
 # --- OpenAINext Configs & Proxy Wiping ---
-OPENAINEXT_API_KEY = os.environ.get("OPENAINEXT_API_KEY") or "sk-mAn6YxK3EWFQJtQ6D095E5CbB4B241D2B960563dA26c4308"
+OPENAINEXT_API_KEY = os.environ.get("OPENAINEXT_API_KEY")
 EMBEDDING_PROVIDER = os.environ.get("EMBEDDING_PROVIDER", "gemini").lower()
 
 if EMBEDDING_PROVIDER == "openainext":
@@ -117,7 +117,7 @@ def extract_document_metadata(text_sample: str, filename: str) -> dict:
     import json
     import re
     
-    api_key = os.environ.get("DEEPSEEK_API_KEY", "sk-e47ef6b141ea4489bf1db5ef48128522")
+    api_key = os.environ.get("DEEPSEEK_API_KEY")
     
     # Generic fallback based on filename keywords
     comp_lower = filename.lower()

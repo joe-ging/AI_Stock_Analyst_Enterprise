@@ -23,7 +23,7 @@ from pymilvus import connections, Collection
 from google.genai import types
 
 # Ensure config environment variables
-os.environ["DEEPSEEK_API_KEY"] = "sk-8c8956265b5f482bb32c1fc6c8878d72"
+# Ensure you have set DEEPSEEK_API_KEY in your environment variables
 
 async def generate_all():
     # Setup connection

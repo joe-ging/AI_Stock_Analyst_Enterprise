@@ -42,7 +42,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@db
 REDIS_URL = os.environ.get("REDIS_URL", "redis://cache:6379/0")
 
 # --- OpenAINext Configs & Proxy Wiping ---
-OPENAINEXT_API_KEY = os.environ.get("OPENAINEXT_API_KEY") or "sk-mAn6YxK3EWFQJtQ6D095E5CbB4B241D2B960563dA26c4308"
+OPENAINEXT_API_KEY = os.environ.get("OPENAINEXT_API_KEY")
 EMBEDDING_PROVIDER = os.environ.get("EMBEDDING_PROVIDER", "gemini").lower()
 
 if EMBEDDING_PROVIDER == "openainext":
