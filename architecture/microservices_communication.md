@@ -11,6 +11,38 @@
 6. **Milvus**: 向量数据库。
 7. **Redis**: 高速缓存。
 
+### 📊 微服务通信拓扑图 (Communication Topology)
+
+```mermaid
+graph TD
+    %% Define Nodes
+    Client["User (Browser)"]
+    Gateway["Gateway (FastAPI)"]
+    Engine["Engine (FastAPI)"]
+    Worker["Worker (Celery)"]
+    MQ["RabbitMQ"]
+    
+    %% Databases
+    DB_PG[(PostgreSQL)]
+    DB_Milvus[(Milvus Vector DB)]
+    DB_Redis[(Redis Cache)]
+
+    %% Define Interactions
+    Client -- "1. HTTP POST / SSE (流式通信)" --> Gateway
+    Gateway -- "2. Sync HTTP/REST (同步调用)" --> Engine
+    
+    Engine -- "3. Publish Task (丢入队列)" --> MQ
+    MQ -. "4. Async Listen (异步守护监听)" .-> Worker
+    
+    %% Database connections (TCP)
+    Engine -- "TCP 持久连接" --> DB_PG
+    Engine -- "TCP 持久连接" --> DB_Milvus
+    Engine -- "TCP 持久连接" --> DB_Redis
+    
+    Worker -- "TCP 持久连接" --> DB_Milvus
+    Worker -- "TCP 持久连接" --> DB_PG
+```
+
 ---
 
 ## 1. Gateway 与 Engine 的通信：同步 HTTP (Synchronous REST)
