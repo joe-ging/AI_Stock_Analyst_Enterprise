@@ -7,6 +7,11 @@
 
 > AI-powered SEC financial analysis tool for institutional investors. Built with a production-ready microservices architecture, emphasizing **100% asynchronous concurrency**, multi-modal database optimization, and strict Ragas objective auditing.
 
+⚡ **Core Architecture & Anti-Hallucination Features:**
+- **Zero-Hallucination SEC Grounding**: Eliminates generic LLM hallucinations using a strict Retrieval-Augmented Generation (RAG) pipeline powered by a **Milvus Vector Database** for factual grounding.
+- **Ragas Automated Quality Gates**: Audits and scores answer faithfulness, answer relevance, and context recall before delivering reports to investors.
+- **Asynchronous Microservices**: Runs on a fully decoupled microservices architecture (**FastAPI + Celery + RabbitMQ + Redis**) ensuring zero-blocking, high-concurrency parsing of heavy reports.
+
 **Live Demo:** [JL Intelligence (Tencent Enterprise Server)](http://43.129.249.161/)
 **Core Stack:** React · FastAPI · Milvus · Redis · Celery/RabbitMQ · DeepSeek / Gemini
 

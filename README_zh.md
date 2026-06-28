@@ -7,6 +7,11 @@
 
 > 专为机构投资者打造的 AI 驱动的 SEC 财报分析工具。基于生产级微服务架构构建，全面强调 **100% 异步并发处理**、多模态数据库协同优化，以及严格的 Ragas 事实客观审计。
 
+⚡ **核心卖点与防幻觉设计：**
+- **防范大模型幻觉**：采用基于 **Milvus 高维向量数据库** 的检索增强生成 (RAG) 机制，实现 SEC 财报数据的物理级精准比对与溯源。
+- **Ragas 自动化质量审计**：在报告交付给用户前，利用 Ragas 框架自动评估并打分报告真实度（Faithfulness）、相关度（Relevance）和上下文召回率（Recall）。
+- **企业级全异步微服务**：底层管线完全解耦（**FastAPI + Celery + RabbitMQ + Redis**），保障在处理数百页超长 SEC 财报的极限并发下，系统依然高可用、低延时。
+
 **在线演示：** [JL Intelligence (腾讯云企业级节点)](http://43.129.249.161/)
 **核心技术栈：** React · FastAPI · Milvus · Redis · Celery/RabbitMQ · DeepSeek / Gemini
 
