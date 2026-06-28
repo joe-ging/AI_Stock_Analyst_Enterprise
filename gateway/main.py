@@ -44,6 +44,7 @@ async def serve_index():
     return HTMLResponse(html_content)
 
 @app.get("/intro", response_class=HTMLResponse)
+@app.get("/intro.html", response_class=HTMLResponse)
 async def serve_intro():
     intro_path = os.path.join(os.path.dirname(__file__), "intro.html")
     if not os.path.exists(intro_path):
