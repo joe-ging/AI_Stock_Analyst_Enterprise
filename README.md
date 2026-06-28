@@ -5,12 +5,12 @@
 
 # 📊 JL Intelligence - Enterprise AI Analyst (Microservices Architecture)
 
-> AI-powered SEC financial analysis tool for institutional investors. Built with a production-ready microservices architecture, emphasizing **100% asynchronous concurrency**, multi-modal database optimization, and strict Ragas objective auditing.
+> A microservices-based parsing engine built to analyze SEC reports without AI hallucinations. Runs async document extraction via FastAPI, Celery, and Milvus, and audits metric accuracy using automated Ragas tests.
 
-⚡ **Core Architecture & Anti-Hallucination Features:**
-- **Zero-Hallucination SEC Grounding**: Eliminates generic LLM hallucinations using a strict Retrieval-Augmented Generation (RAG) pipeline powered by a **Milvus Vector Database** for factual grounding.
-- **Ragas Automated Quality Gates**: Audits and scores answer faithfulness, answer relevance, and context recall before delivering reports to investors.
-- **Asynchronous Microservices**: Runs on a fully decoupled microservices architecture (**FastAPI + Celery + RabbitMQ + Redis**) ensuring zero-blocking, high-concurrency parsing of heavy reports.
+⚡ **Why this architecture is different:**
+- **Factual Grounding via Milvus**: Instead of letting the LLM guess numbers, the engine slices SEC reports into vector chunks inside **Milvus** and forces the LLM to only reason using retrieved raw report sentences.
+- **Pre-delivery Ragas Audits**: Answers must pass automated checks (Faithfulness, Recall, Relevance) that map every extracted statistic back to the source text before reaching the user.
+- **Non-blocking Celery Pipelines**: Relies on a decoupled stack (**FastAPI, Celery, RabbitMQ, and Redis**) to parse multi-page filings in the background, keeping the API responsive.
 
 **Live Demo:** [JL Intelligence (Tencent Enterprise Server)](http://43.129.249.161/)
 **Core Stack:** React · FastAPI · Milvus · Redis · Celery/RabbitMQ · DeepSeek / Gemini

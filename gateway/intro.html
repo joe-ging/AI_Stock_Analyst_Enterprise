@@ -22,14 +22,14 @@
         const LANG_DICT = {
             zh_hk: {
                 title: "JL Intelligence",
-                subtitle: "系統架構與 RAGAS 審計原理",
+                subtitle: "系統架構與 RAGAS 數據校對原理",
                 back: "返回分析主頁",
                 guideTitle: "🚀 快速上手指南 (User Guide)",
                 guideContent: "我們提供兩種投研模式：\n1. 物理 PDF 研報模式：您可以上傳高達數百頁的企業財報（如 10-K, 10-Q）。系統會進行深度跨頁掃描與數據提取。\n2. SEC EDGAR 系統模式：直接輸入美股代碼（如 AAPL），系統會自動通過 SEC 官方 API 抓取並解析最新的財務申報文件。\n\n💡 核心功能：\n• 自由問答：數據庫構建完成後，除了生成深度的投資論點 (Investment Thesis) 報告，您還可以對財報數據庫進行自由提問 (Freeform Q&A)。\n• 溯源引用 (Citations)：所有生成的回答都附帶精確的原文引用出處，確保數據真實可靠。\n• 報告下載：無論是深度研報還是自由問答結果，均支持一鍵匯出為 PDF 文件，方便存檔與分享。",
-                archTitle: "🏗️ 企業級全異步微服務架構",
-                archContent: "為什麼系統沒有立刻給出回答，而是需要等待 1-2 分鐘？\n\n一般的 AI（如 ChatGPT）會將所有文本直接塞給模型，這不僅會導致嚴重的幻覺，而且無法處理超長財報。而我們的系統採用了真正的企業級架構：\n當您點擊「啟動 AI 分析」時，Gateway 網關會將任務扔進 RabbitMQ 消息隊列，由後台 Celery Worker 集群接管。Worker 會將幾百頁的財報切分成數千個「語義向量塊 (Vector Chunks)」，並實時構建到 Milvus 向量數據庫中。這個底層構建過程（Building Vector Database）需要大量的算力與時間。\n只有當數據庫構建完畢後，系統才會使用 RAG（檢索增強生成）技術，精準提取相關的財務數據並交由 LLM 進行嚴格推理，從而確保每一句話都有據可查。",
-                ragasTitle: "📊 RAGAS 客觀事實審計機制",
-                ragasIntro: "金融投研領域對「幻覺 (Hallucination)」是零容忍的。我們在生成報告的最後一步，引入了 RAGAS 審計框架，作為一道嚴格的質量門禁。具體評分機制如下：",
+                archTitle: "🏗️ 背景任務與異步處理機制",
+                archContent: "為什麼點擊分析後需要等待 1 到 2 分鐘？\n\n一般的 LLM 會直接順序讀取文字，難以處理動輒數百頁的 SEC 申報文件。當您上傳財報或輸入代碼時，Gateway 網關會將任務交給 Celery 後台進程。後台進程會解析文本、生成向量特徵，並在 Milvus 中建立本地索引。只有索引構建完成後，大模型才能檢索並提取數據。這個解析和向量化過程在後台運行需要一些時間，但這能保證您前端界面的流暢互動。",
+                ragasTitle: "📊 RAGAS 自動化指標檢驗",
+                ragasIntro: "為確保財務指標的準確性，我們在報告輸出前引入了 RAGAS 測試框架，對生成的回答進行自動化跑分校對。具體指標如下：",
                 ragasFaith: "1. 忠實度 (Faithfulness)",
                 ragasFaithDesc: "這項指標衡量生成的報告是否 100% 來源於 SEC 財報原文。如果 AI 捏造了未經驗證的財務數字，該得分將直線下降。",
                 ragasFaithFormula: "Faithfulness = (基於上下文得出結論的句子數) / (AI 生成的總句子數)",
@@ -40,18 +40,20 @@
                 ragasRelDesc: "評估生成內容與投資價值研究的直接關聯程度，杜絕 AI 輸出與主題無關的冗餘對話。",
                 ragasRelFormula: "Relevance = Cosine_Similarity(原問題向量, AI回答向量)",
                 milvusTitle: "🗂️ Milvus 向量數據庫與 RAG 檢索增強",
-                milvusContent: "為什麼 RAG（檢索增強生成）能有效防止大模型幻覺？\n\n傳統 AI 直接依賴模型內部的權重進行聯想回答，這極易導致「一本正經地胡說八道」。本系統採用了 Milvus 高維向量數據庫作為物理知識庫：\n1. 語義向量化：系統在後台將 SEC 財報解析，並利用 Embedding 模型轉化為高維數值向量。\n2. 限制檢索空間：當您進行提問時，系統會首先在 Milvus 數據庫中進行語義相似度搜索，檢索出與問題最相關的原始財報文本段落。\n3. 精準上下文注入：LLM（大模型）只會閱讀這些被檢索出來的「真實財報原句」進行推理，從而被限制在真實數據範圍內，從根本上防範了幻覺的產生。"
+                milvusContent: "為什麼 RAG（檢索增強生成）能防止大模型幻覺？\n\n傳統 AI 靠 parametric memory（參數記憶）回答，容易「一本正經地胡說八道」。本系統使用 Milvus 向量數據庫作為事實數據底座：\n1. 財報文本切片與向量化：系統在後台將 SEC 財報切分為多個語義塊，並轉化為向量存儲。\n2. 精準定位原文：當您提問時，系統會先在 Milvus 數據庫中進行語義相似度檢索，找出最相關的財報段落。\n3. 強制上下文閱讀：LLM（大模型）只會閱讀這些被檢索出的財報原句進行推理，被嚴格限制在事實範圍內，杜絕了數字捏造的可能。",
+                verifyTitle: "🔍 如何自行驗證報告真實性？",
+                verifyContent: "我們深知金融分析容不得半點虛假，因此我們不要求您盲目相信 AI 的回答。系統中的每一份报告都支持「源頭追溯」：\n1. 溯源引用 (Citations)：生成的分析報告和問答結果中，所有關鍵財務數據旁都附帶標註（如 [Chunk X] 或具體章節）。您可以對照物理 SEC 財報進行人工核對。\n2. SEC 官方鏈接對照：對於從 SEC EDGAR 系統抓取的數據，系統會提供對應的 SEC 官方申報文件鏈接，您可以直接點擊鏈接跳轉到官方文檔，驗證數據點的正確性。\n通過這種方式，系統將 AI 的黑盒推理轉化為透明、可追溯的開放白盒，讓每一筆數據都經得起審計。"
             },
             zh_cn: {
                 title: "JL Intelligence",
-                subtitle: "系统架构与 RAGAS 审计原理",
+                subtitle: "系统架构与 RAGAS 数据校对原理",
                 back: "返回分析主页",
                 guideTitle: "🚀 快速上手指南 (User Guide)",
                 guideContent: "我们提供两种投研模式：\n1. 物理 PDF 研报模式：您可以上传高达数百页的企业财报（如 10-K, 10-Q）。系统会进行深度跨页扫描与数据提取。\n2. SEC EDGAR 系统模式：直接输入美股代码（如 AAPL），系统会自动通过 SEC 官方 API 抓取并解析最新的财务申报文件。\n\n💡 核心功能：\n• 自由问答：数据库构建完成后，除了生成深度的投资论点 (Investment Thesis) 报告，您还可以对财报数据库进行自由提问 (Freeform Q&A)。\n• 溯源引用 (Citations)：所有生成的回答都附带精确的原文引用出处，确保数据真实可靠。\n• 报告下载：无论是深度研报还是自由问答结果，均支持一键导出为 PDF 文件，方便存档与分享。",
-                archTitle: "🏗️ 企业级全异步微服务架构",
-                archContent: "为什么系统没有立刻给出回答，而是需要等待 1-2 分钟？\n\n一般的 AI（如 ChatGPT）会将所有文本直接塞给模型，这不仅会导致严重的幻觉，而且无法处理超长财报。而我们的系统采用了真正的企业级架构：\n当您点击“启动 AI 分析”时，Gateway 网关会将任务扔进 RabbitMQ 消息队列，由后台 Celery Worker 集群接管。Worker 会将几百页的财报切分成数千个“语义向量块 (Vector Chunks)”，并实时构建到 Milvus 向量数据库中。这个底层构建过程（Building Vector Database）需要大量的算力与时间。\n只有当数据库构建完毕后，系统才会使用 RAG（检索增强生成）技术，精准提取相关的财务数据并交由 LLM 进行严格推理，从而确保每一句话都有据可查。",
-                ragasTitle: "📊 RAGAS 客观事实审计机制",
-                ragasIntro: "金融投研领域对“幻觉 (Hallucination)”是零容忍的。我们在生成报告的最后一步，引入了 RAGAS 审计框架，作为一道严格的质量门禁。具体评分机制如下：",
+                archTitle: "🏗️ 后台任务与异步处理机制",
+                archContent: "为什么点击分析后需要等待 1 到 2 分钟？\n\n一般的 LLM 会直接顺序读取文本，难以处理动辄数百页的 SEC 申报文件。当您上传财报或输入代码时，Gateway 网关会将任务交给 Celery 后台进程。后台进程会解析文本、生成向量特征，并在 Milvus 中建立本地索引。只有索引构建完成后，大模型才能检索并提取数据。这个解析和向量化过程在后台运行需要一些时间，但这能保证您前端界面的流畅交互。",
+                ragasTitle: "📊 RAGAS 自动化指标检验",
+                ragasIntro: "为确保财务指标的准确性，我们在报告输出前引入了 RAGAS 测试框架，对生成的回答进行自动化跑分校对。具体指标如下：",
                 ragasFaith: "1. 忠实度 (Faithfulness)",
                 ragasFaithDesc: "这项指标衡量生成的报告是否 100% 来源于 SEC 财报原文。如果 AI 捏造了未经验证的财务数字，该得分将直线下降。",
                 ragasFaithFormula: "Faithfulness = (基于上下文得出结论的句子数) / (AI 生成的总句子数)",
@@ -62,18 +64,20 @@
                 ragasRelDesc: "评估生成内容与投资价值研究的直接关联程度，杜绝 AI 输出与主题无关的冗余对话。",
                 ragasRelFormula: "Relevance = Cosine_Similarity(原问题向量, AI回答向量)",
                 milvusTitle: "🗂️ Milvus 向量数据库与 RAG 检索增强",
-                milvusContent: "为什么 RAG（检索增强生成）能有效防止大模型幻觉？\n\n传统 AI 直接依赖模型内部的权重进行联想回答，这极易导致“一鸣惊人地胡说八道”。本系统采用了 Milvus 高维向量数据库作为物理知识库：\n1. 语义向量化：系统在后台将 SEC 财报解析，并利用 Embedding 模型转化为高维数值向量。\n2. 限制检索空间：当您进行提问时，系统会首先在 Milvus 数据库中进行语义相似度搜索，检索出与问题最相关的原始财报文本段落。\n3. 精确上下文注入：LLM（大模型）只会阅读这些被检索出来的“真实财报原句”进行推理，从而被限制在真实数据范围内，从根本上防范了幻觉的产生。"
+                milvusContent: "为什么 RAG（检索增强生成）能防止大模型幻觉？\n\n传统 AI 靠 parametric memory（参数记忆）回答，容易“一鸣惊人地胡说八道”。本系统使用 Milvus 向量数据库作为事实数据底座：\n1. 财报文本切片与传量化：系统在后台将 SEC 财报切分为多个语义块，并转化为向量存储。\n2. 精准定位原文：当您提问时，系统会先在 Milvus 数据库中进行语义相似度检索，找出最相关的财报段落。\n3. 强制上下文阅读：LLM（大模型）只会阅读这些被检索出的财报原句进行推理，被严格限制在事实范围内，杜绝了数字捏造的可能。",
+                verifyTitle: "🔍 如何自行验证报告真实性？",
+                verifyContent: "我们深知金融分析容不得半点虚假，因此我们不要求您盲目相信 AI 的回答。系统中的每一份报告都支持“源头追溯”：\n1. 溯源引用 (Citations)：生成的分析报告和问答结果中，所有关键财务数据旁都附带标注（如 [Chunk X] 或具体章节）。您可以对照物理 SEC 财报进行人工核对。\n2. SEC 官方链接对照：对于从 SEC EDGAR 系统抓取的数据，系统会提供对应的 SEC 官方申报文件链接，您可以直接点击链接跳转到官方文档，验证数据点正确性。\n通过这种方式，系统将 AI 的黑盒推理转化为透明、可追溯的开放白盒，让每一笔数据都经得起审计。"
             },
             en: {
                 title: "JL Intelligence",
-                subtitle: "Architecture & RAGAS Auditing Principles",
+                subtitle: "Architecture & RAGAS Verification Principles",
                 back: "Back to Analysis Console",
                 guideTitle: "🚀 User Guide",
                 guideContent: "We offer two research modes:\n1. PDF Mode: Upload financial reports (10-K, 10-Q) up to hundreds of pages. The system performs deep cross-page scanning and extraction.\n2. SEC EDGAR Mode: Enter a US stock ticker (e.g., AAPL). The system fetches and parses the latest filings directly from the SEC's official API.\n\n💡 Core Features:\n• Freeform Q&A: Once the vector database is built, in addition to generating Deep Investment Thesis reports, you can freely ask any question against the database.\n• Verifiable Citations: Every generated answer includes precise citations to the original source text, ensuring absolute reliability.\n• PDF Export: All generated outputs—whether structured reports or freeform Q&A—can be downloaded as a PDF for archiving and sharing.",
-                archTitle: "🏗️ Asynchronous Microservices Architecture",
-                archContent: "Why does it take 1-2 minutes to receive an answer?\n\nGeneral AI models (like ChatGPT) blindly process entire documents, leading to severe hallucinations and length limitations. Our system uses a true enterprise-grade architecture:\nWhen you click 'Launch Analysis', the Gateway pushes the task into a RabbitMQ message queue, picked up by a cluster of Celery Workers. The workers slice hundreds of pages into thousands of vector chunks and construct a Milvus Vector Database in real-time. This underlying process (Building Vector Database) requires massive computation.\nOnly after the database is built does the system use RAG (Retrieval-Augmented Generation) to extract precise financial data points for the LLM to reason upon, ensuring every claim is backed by evidence.",
-                ragasTitle: "📊 RAGAS Objective Fact-Checking Mechanism",
-                ragasIntro: "In institutional finance, AI hallucinations are strictly unacceptable. We integrate the RAGAS auditing framework as a strict Quality Gate before delivering the final report. The scoring mechanism is as follows:",
+                archTitle: "🏗️ Background Tasks & Async Processing",
+                archContent: "Why do you wait 1 to 2 minutes? Standard LLMs process text sequentially, which struggles with hundred-page SEC filings. When you upload a report or submit a ticker, the Gateway hands the task to Celery background workers. They parse the text, generate vector embeddings, and build a local database index inside Milvus. Only when this index is ready does the LLM query it to extract metrics. This background parsing step takes time, but it keeps your frontend interactive.",
+                ragasTitle: "📊 RAGAS Automated Metric Validation",
+                ragasIntro: "To ensure financial accuracy, we run automated validation checks using the RAGAS framework before any report is delivered. The validation rules are as follows:",
                 ragasFaith: "1. Faithfulness",
                 ragasFaithDesc: "Measures whether the generated report is 100% derived from the source SEC text. If the AI fabricates unverified financial figures, this score immediately drops.",
                 ragasFaithFormula: "Faithfulness = (Number of claims supported by context) / (Total claims in AI report)",
@@ -84,7 +88,9 @@
                 ragasRelDesc: "Evaluates how directly the generated content relates to investment research, eliminating redundant or off-topic conversational AI outputs.",
                 ragasRelFormula: "Relevance = Cosine_Similarity(Query Vector, AI Response Vector)",
                 milvusTitle: "🗂️ Milvus Vector Database & RAG Retrieval",
-                milvusContent: "Why does RAG (Retrieval-Augmented Generation) effectively prevent LLM hallucinations?\n\nTraditional AI models rely solely on internal parametric memory to guess answers, which inevitably leads to hallucinating fake numbers. Our system implements Milvus as an anchor of truth:\n1. Semantic Vectorization: SEC filings are parsed and converted into high-dimensional vector embeddings.\n2. Query Ingestion: When you ask a question, the system queries the Milvus Vector DB first to search for paragraphs with the highest semantic similarity.\n3. Grounded Context Injection: The LLM is strictly constrained to read *only* these retrieved raw report excerpts. It acts as an analyst reading the document, preventing any fabricated numbers."
+                milvusContent: "Why does RAG (Retrieval-Augmented Generation) effectively prevent LLM hallucinations?\n\nTraditional AI models rely on internal parametric memory to guess answers, which inevitably leads to fabricating numbers. Our system uses Milvus as a factual grounding database:\n1. Semantic Chunking: SEC filings are parsed, sliced into semantic chunks, and converted into vector embeddings.\n2. Query Ingestion: When you ask a question, the system queries the Milvus Vector DB first to search for paragraphs with the highest semantic similarity.\n3. Grounded Constraints: The LLM is strictly constrained to read *only* these retrieved raw report excerpts. It acts as an analyst reading the document, preventing any fabricated numbers.",
+                verifyTitle: "🔍 How to Verify the Authenticity Yourself?",
+                verifyContent: "We know financial analysis demands absolute accuracy, which is why we don't ask you to blindly trust the AI. Every report supports source traceability:\n1. Granular Citations: Key metrics in the generated report or Q&A results include references (e.g. [Chunk X]). You can cross-reference these directly with the physical report.\n2. Official SEC Links: For data fetched from the SEC EDGAR system, we provide direct links to the official filings. You can click to open the original SEC filings and verify the figures yourself.\nThis converts the AI's 'black box' reasoning into a transparent, fully auditable white box, ensuring every number stands up to scrutiny."
             }
         };
 
@@ -147,6 +153,12 @@
                         <section className="bg-white p-8 rounded-3xl shadow-xl shadow-gray-200/50 border border-gray-100">
                             <h2 className="text-xl font-black text-indigo-900 mb-4">{t.milvusTitle}</h2>
                             <p className="text-gray-600 leading-relaxed whitespace-pre-line">{t.milvusContent}</p>
+                        </section>
+
+                        {/* Self Verification */}
+                        <section className="bg-white p-8 rounded-3xl shadow-xl shadow-gray-200/50 border border-gray-100">
+                            <h2 className="text-xl font-black text-indigo-900 mb-4">{t.verifyTitle}</h2>
+                            <p className="text-gray-600 leading-relaxed whitespace-pre-line">{t.verifyContent}</p>
                         </section>
 
                         {/* 3. Ragas Scoring */}
