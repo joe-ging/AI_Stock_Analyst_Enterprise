@@ -65,7 +65,8 @@
                 tickerFuzzy: "支援模糊輸入",
                 compareYears: "對比財報年份",
                 buildingVectorDB: "正在構建向量數據庫...",
-                buildingVectorDBHint: "系統正在解析 SEC 財報並初始化 Milvus 嵌入模型。這可能需要 1 到 2 分鐘，請耐心等待。"
+                buildingVectorDBHint: "系統正在解析 SEC 財報並初始化 Milvus 嵌入模型。這可能需要 1 到 2 分鐘，請耐心等待。",
+                introLink: "👉 點擊查看系統背後運行原理與 RAGAS 審計機制"
             },
             zh_cn: {
                 title: "JL Intelligence",
@@ -94,7 +95,8 @@
                 tickerFuzzy: "支持模糊输入",
                 compareYears: "对比财报年份",
                 buildingVectorDB: "正在构建向量数据库...",
-                buildingVectorDBHint: "系统正在解析 SEC 财报并初始化 Milvus 嵌入模型。这可能需要 1 到 2 分钟，请耐心等待。"
+                buildingVectorDBHint: "系统正在解析 SEC 财报并初始化 Milvus 嵌入模型。这可能需要 1 到 2 分钟，请耐心等待。",
+                introLink: "👉 点击查看系统背后运行原理与 RAGAS 审计机制"
             },
             en: {
                 title: "JL Intelligence",
@@ -123,7 +125,8 @@
                 tickerFuzzy: "Supports fuzzy input",
                 compareYears: "Filing Years",
                 buildingVectorDB: "Building Vector Database...",
-                buildingVectorDBHint: "Processing SEC filings and initializing Milvus embeddings. This may take 1-2 minutes."
+                buildingVectorDBHint: "Processing SEC filings and initializing Milvus embeddings. This may take 1-2 minutes.",
+                introLink: "👉 Click here to view Behind the Scenes architecture & RAGAS principles"
             }
         };
 
@@ -519,6 +522,12 @@
                                 <p className="text-[9px] text-slate-400 leading-relaxed font-medium">
                                     {t.disclaimer}
                                 </p>
+                            </div>
+
+                            <div className="mt-8 text-center">
+                                <a href="/intro" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-xs font-bold text-indigo-600 bg-indigo-50 px-4 py-2 rounded-full hover:bg-indigo-100 transition-colors cursor-pointer border border-indigo-100 shadow-sm">
+                                    {t.introLink}
+                                </a>
                             </div>
                         </div>
 

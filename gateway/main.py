@@ -43,6 +43,15 @@ async def serve_index():
         html_content = f.read()
     return HTMLResponse(html_content)
 
+@app.get("/intro", response_class=HTMLResponse)
+async def serve_intro():
+    intro_path = os.path.join(os.path.dirname(__file__), "intro.html")
+    if not os.path.exists(intro_path):
+        return HTMLResponse("<h2>intro.html missing on Gateway</h2>", status_code=404)
+    with open(intro_path, "r", encoding="utf-8") as f:
+        html_content = f.read()
+    return HTMLResponse(html_content)
+
 @app.get("/health")
 async def health():
     # Ping the engine service
