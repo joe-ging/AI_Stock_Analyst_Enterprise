@@ -331,6 +331,10 @@
 
             return (
                 <div className="min-h-screen flex flex-col">
+                    {/* Top Banner */}
+                    <a href="/intro" target="_blank" rel="noopener noreferrer" className="bg-indigo-600 text-white text-center py-2 px-4 text-[10px] md:text-xs font-bold tracking-wide hover:bg-indigo-700 transition-colors shadow-md z-[60] flex items-center justify-center gap-2 cursor-pointer">
+                        {t.introLink}
+                    </a>
                     {/* Header */}
                     <header className="bg-white border-b border-gray-200 px-4 md:px-8 h-16 md:h-20 flex items-center justify-between sticky top-0 z-50 backdrop-blur-md bg-white/90">
                         <div className="flex items-center gap-2 md:gap-4">
@@ -522,12 +526,6 @@
                                 <p className="text-[9px] text-slate-400 leading-relaxed font-medium">
                                     {t.disclaimer}
                                 </p>
-                            </div>
-
-                            <div className="mt-8 text-center">
-                                <a href="/intro" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-xs font-bold text-indigo-600 bg-indigo-50 px-4 py-2 rounded-full hover:bg-indigo-100 transition-colors cursor-pointer border border-indigo-100 shadow-sm">
-                                    {t.introLink}
-                                </a>
                             </div>
                         </div>
 
