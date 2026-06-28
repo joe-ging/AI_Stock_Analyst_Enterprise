@@ -24,3 +24,9 @@ Thumbs.db
 
 # Generated reports
 RAG_Quality_Dashboard.md
+
+# Local Documentation & Architecture
+architecture/
+future_improvements_plans/
+README_old.md
+ai_knowledge_base.md
