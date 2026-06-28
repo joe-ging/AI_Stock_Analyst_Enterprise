@@ -38,7 +38,9 @@
                 ragasRecallFormula: "Recall = (報告中涵蓋的核心觀點數) / (原文中存在的總核心觀點數)",
                 ragasRel: "3. 相關度 (Answer Relevance)",
                 ragasRelDesc: "評估生成內容與投資價值研究的直接關聯程度，杜絕 AI 輸出與主題無關的冗餘對話。",
-                ragasRelFormula: "Relevance = Cosine_Similarity(原問題向量, AI回答向量)"
+                ragasRelFormula: "Relevance = Cosine_Similarity(原問題向量, AI回答向量)",
+                milvusTitle: "🗂️ Milvus 向量數據庫與 RAG 檢索增強",
+                milvusContent: "為什麼 RAG（檢索增強生成）能有效防止大模型幻覺？\n\n傳統 AI 直接依賴模型內部的權重進行聯想回答，這極易導致「一本正經地胡說八道」。本系統採用了 Milvus 高維向量數據庫作為物理知識庫：\n1. 語義向量化：系統在後台將 SEC 財報解析，並利用 Embedding 模型轉化為高維數值向量。\n2. 限制檢索空間：當您進行提問時，系統會首先在 Milvus 數據庫中進行語義相似度搜索，檢索出與問題最相關的原始財報文本段落。\n3. 精準上下文注入：LLM（大模型）只會閱讀這些被檢索出來的「真實財報原句」進行推理，從而被限制在真實數據範圍內，從根本上防範了幻覺的產生。"
             },
             zh_cn: {
                 title: "JL Intelligence",
@@ -58,7 +60,9 @@
                 ragasRecallFormula: "Recall = (报告中涵盖的核心观点数) / (原文中存在的总核心观点数)",
                 ragasRel: "3. 相关度 (Answer Relevance)",
                 ragasRelDesc: "评估生成内容与投资价值研究的直接关联程度，杜绝 AI 输出与主题无关的冗余对话。",
-                ragasRelFormula: "Relevance = Cosine_Similarity(原问题向量, AI回答向量)"
+                ragasRelFormula: "Relevance = Cosine_Similarity(原问题向量, AI回答向量)",
+                milvusTitle: "🗂️ Milvus 向量数据库与 RAG 检索增强",
+                milvusContent: "为什么 RAG（检索增强生成）能有效防止大模型幻觉？\n\n传统 AI 直接依赖模型内部的权重进行联想回答，这极易导致“一鸣惊人地胡说八道”。本系统采用了 Milvus 高维向量数据库作为物理知识库：\n1. 语义向量化：系统在后台将 SEC 财报解析，并利用 Embedding 模型转化为高维数值向量。\n2. 限制检索空间：当您进行提问时，系统会首先在 Milvus 数据库中进行语义相似度搜索，检索出与问题最相关的原始财报文本段落。\n3. 精确上下文注入：LLM（大模型）只会阅读这些被检索出来的“真实财报原句”进行推理，从而被限制在真实数据范围内，从根本上防范了幻觉的产生。"
             },
             en: {
                 title: "JL Intelligence",
@@ -78,7 +82,9 @@
                 ragasRecallFormula: "Recall = (Core claims covered in report) / (Total core claims present in source)",
                 ragasRel: "3. Answer Relevance",
                 ragasRelDesc: "Evaluates how directly the generated content relates to investment research, eliminating redundant or off-topic conversational AI outputs.",
-                ragasRelFormula: "Relevance = Cosine_Similarity(Query Vector, AI Response Vector)"
+                ragasRelFormula: "Relevance = Cosine_Similarity(Query Vector, AI Response Vector)",
+                milvusTitle: "🗂️ Milvus Vector Database & RAG Retrieval",
+                milvusContent: "Why does RAG (Retrieval-Augmented Generation) effectively prevent LLM hallucinations?\n\nTraditional AI models rely solely on internal parametric memory to guess answers, which inevitably leads to hallucinating fake numbers. Our system implements Milvus as an anchor of truth:\n1. Semantic Vectorization: SEC filings are parsed and converted into high-dimensional vector embeddings.\n2. Query Ingestion: When you ask a question, the system queries the Milvus Vector DB first to search for paragraphs with the highest semantic similarity.\n3. Grounded Context Injection: The LLM is strictly constrained to read *only* these retrieved raw report excerpts. It acts as an analyst reading the document, preventing any fabricated numbers."
             }
         };
 
@@ -135,6 +141,12 @@
                         <section className="bg-white p-8 rounded-3xl shadow-xl shadow-gray-200/50 border border-gray-100">
                             <h2 className="text-xl font-black text-indigo-900 mb-4">{t.archTitle}</h2>
                             <p className="text-gray-600 leading-relaxed whitespace-pre-line mb-6">{t.archContent}</p>
+                        </section>
+
+                        {/* Milvus Vector DB */}
+                        <section className="bg-white p-8 rounded-3xl shadow-xl shadow-gray-200/50 border border-gray-100">
+                            <h2 className="text-xl font-black text-indigo-900 mb-4">{t.milvusTitle}</h2>
+                            <p className="text-gray-600 leading-relaxed whitespace-pre-line">{t.milvusContent}</p>
                         </section>
 
                         {/* 3. Ragas Scoring */}
