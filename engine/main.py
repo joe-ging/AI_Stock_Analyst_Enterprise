@@ -1308,7 +1308,7 @@ async def query_rag_stream(
                 f"{{\"faithfulness\": 0.95, \"answer_recall\": 0.92, \"relevance\": 0.96}}\n"
                 f"</scores>\n"
                 f"<detailed_report>\n"
-                f"Write a comprehensive markdown-formatted Ragas audit report here. Include sub-sections for each metric, highlighting specific strengths, missing data, and any identified hallucinations.\n"
+                f"Write a comprehensive markdown-formatted Ragas audit report here. Include sub-sections for each metric, highlighting specific strengths, missing data, and any identified hallucinations. IMPORTANT: The detailed report MUST be written entirely in {language.value}.\n"
                 f"</detailed_report>"
             )
             score_text = ""
@@ -1338,7 +1338,15 @@ async def query_rag_stream(
             detailed_match = re.search(r'<detailed_report>(.*?)</detailed_report>', score_text, re.DOTALL)
             if detailed_match:
                 detailed_report = detailed_match.group(1).strip()
-                ragas_markdown = f"\n\n---\n\n### 🛡️ RAGAS AI SELF-AUDIT REPORT\n\n{detailed_report}\n"
+                
+                if language.value == "Simplified Chinese":
+                    ragas_header = "### 🛡️ RAGAS AI 质量审计报告"
+                elif language.value == "Traditional Chinese":
+                    ragas_header = "### 🛡️ RAGAS AI 質量審計報告"
+                else:
+                    ragas_header = "### 🛡️ RAGAS AI SELF-AUDIT REPORT"
+                    
+                ragas_markdown = f"\n\n---\n\n{ragas_header}\n\n{detailed_report}\n"
                 final_report_text += ragas_markdown
                 yield f"data: {json.dumps({'type': 'token', 'content': ragas_markdown})}\n\n"
             
