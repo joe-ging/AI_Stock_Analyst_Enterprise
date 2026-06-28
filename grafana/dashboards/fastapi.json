@@ -7,7 +7,7 @@
       "title": "Total API Requests",
       "targets": [
         {
-          "expr": "sum(fastapi_requests_total)",
+          "expr": "sum(http_requests_total)",
           "refId": "A"
         }
       ],
@@ -23,7 +23,7 @@
       "title": "API Request Duration (seconds)",
       "targets": [
         {
-          "expr": "rate(fastapi_requests_duration_seconds_sum[1m]) / rate(fastapi_requests_duration_seconds_count[1m])",
+          "expr": "rate(http_request_duration_seconds_sum[1m]) / rate(http_request_duration_seconds_count[1m])",
           "refId": "A"
         }
       ],
@@ -32,6 +32,23 @@
         "y": 0,
         "w": 12,
         "h": 8
+      }
+    },
+    {
+      "type": "logs",
+      "title": "Live AI Q&A Logs (Tencent Cloud)",
+      "datasource": "Loki",
+      "targets": [
+        {
+          "expr": "{job=\"enterprise-rag\"} |= \"Gateway streaming:\"",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 24,
+        "h": 10
       }
     }
   ]

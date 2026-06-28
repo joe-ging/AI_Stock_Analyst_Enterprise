@@ -57,9 +57,11 @@ sequenceDiagram
     participant Worker as Celery Worker
     participant AI as 向量大模型 API
     participant Milvus as Milvus DB
+    participant Log as 集中式日志系统 (PLG)
     
     UI->>Engine: POST /upload (上传 PDF)
     Engine->>PG: 插入元数据 (状态: Pending)
+    Engine->>Log: 记录上传事件与文件大小
     Engine->>MQ: 派发异步解析任务
     Engine-->>UI: 返回 202 响应码 (带回 Job ID)
     
@@ -71,6 +73,7 @@ sequenceDiagram
     AI-->>Worker: 返回高维向量
     Worker->>Milvus: 存入向量数据
     Worker->>PG: 更新状态 -> 'Completed'
+    Worker->>Log: 记录向量化耗时与文本块数量
     deactivate Worker
 ```
 
@@ -80,14 +83,18 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant UI as React Client
-    participant Engine as FastAPI (异步引擎)
+    participant Gateway as FastAPI 网关
+    participant Log as 集中式日志系统 (PLG)
+    participant Engine as FastAPI 引擎
     participant DeepSeek as DeepSeek API
     
-    UI->>Engine: GET /query/stream
+    UI->>Gateway: POST /analyze/stream
+    Gateway->>Log: 落盘 Q&A 问答元数据 (gateway.log)
+    Gateway->>Engine: 转发流式请求
     Engine->>DeepSeek: 发起异步流式推理请求
-    DeepSeek-->>Engine: 实时传输 Tokens
-    Engine-->>UI: 通过 SSE 逐块推送 Tokens
-    Note over UI, Engine: 前端 UI 实时非阻塞渲染
+    DeepSeek-->>Engine: 实时传输 Tokens (逐块)
+    Engine-->>Gateway: 转发 Tokens
+    Gateway-->>UI: 通过 SSE 逐块推送 Tokens
 ```
 
 ---
@@ -117,6 +124,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant Engine as FastAPI 引擎
+    participant Log as 集中式日志系统 (PLG)
     participant AI as 向量大模型 API
     participant Redis as Redis Cache
     participant Milvus as Milvus DB
@@ -125,10 +133,13 @@ sequenceDiagram
     Engine->>Redis: 计算向量余弦相似度
     alt 缓存命中 (Cosine > 0.97)
         Redis-->>Engine: 返回被缓存的分析报告 (0ms 延迟)
+        Engine->>Log: 记录缓存命中 (Cache HIT) 与节省的 Token
     else 缓存未命中
         Redis-->>Engine: 未找到
+        Engine->>Log: 记录缓存未命中 (Cache MISS)
         Engine->>Milvus: 触发混合检索 (基于查询向量)
         Milvus-->>Engine: 返回 Top-K 相关文本块
+        Engine->>Log: 记录 Milvus 查询耗时
     end
 ```
 
@@ -161,6 +172,7 @@ graph TD
     F -->|高相关性| H[审计通过并自动附加引文出处]
     
     H --> I[最终版机构级投研报告]
+    I --> J[记录 Ragas 审计最终得分到日志]
 ```
 
 ---
@@ -188,7 +200,56 @@ graph TD
 
 ---
 
-## 🔹 7. 安全与密钥管理 (Secret Management)
+---
+
+## 🔹 8. 零信任 PLG 监控与日志架构 (Zero-Trust PLG Architecture)
+
+为了在多云部署环境中确保 100% 的可观测性与严格的数据安全，我们实现了一套基于 **Tailscale** 军用级加密网络保护的 **Promtail + Loki + Grafana (PLG)** 监控栈。
+
+### 多云日志拓扑结构
+- **数据生成节点 (腾讯云)**：`Gateway` 和 `Engine` 微服务将所有的分析查询和健康指标动态输出到宿主机数据卷 (`/home/ubuntu/AI_Stock_Analyst_Enterprise/logs/`)。
+- **数据搬运工**: `Promtail` 守护进程实时追踪 `gateway.log` 和 `engine.log` 的变化。
+- **零信任隧道**: Promtail 绝不会将日志暴露在公网上，而是通过极其安全的 **Tailscale VPN** 直接将其推送到控制平面。
+- **控制与监控平面 (AWS 悉尼)**：`Loki` 数据库安全地接收并建立日志索引。最终，`Grafana` 对数据进行实时可视化过滤（例如精准抓取 `Gateway streaming:`），呈现出无杂质的 AI 对话瀑布流。
+
+```mermaid
+graph TD
+    subgraph Local["你的本地 Mac (开发环境)"]
+        A1[源代码]
+        A2[显示 Grafana 的浏览器]
+    end
+
+    subgraph Tencent["腾讯云 🇨🇳 (AI 生产后端)"]
+        direction TB
+        B1((Gateway 容器))
+        B2((Engine 容器))
+        B3[(宿主机硬盘)]
+        B4[Promtail 日志搬运工]
+        
+        B1 -->|FileHandler 写入| B3
+        B2 -->|FileHandler 写入| B3
+        B3 -.->|挂载 logs 数据卷| B1
+        B3 -.->|挂载 logs 数据卷| B2
+        B4 -->|尾随日志文件| B3
+    end
+
+    subgraph Sydney["AWS 悉尼 🇦🇺 (控制与监控平面)"]
+        direction TB
+        C1[(Loki 数据库)]
+        C2[Grafana 大盘]
+        
+        C1 -->|提供数据给| C2
+    end
+
+    A1 -->|git push / ssh 部署| B1
+    A1 -->|git push / ssh 部署| C2
+    B4 ==>|Tailscale 加密隧道| C1
+    A2 -.->|HTTP 访问 :3000| C2
+```
+
+---
+
+## 🔹 9. 安全与密钥管理 (Secret Management)
 
 企业级金融应用对密钥管理有极其严苛的要求。API 密钥 (Gemini, DeepSeek, OpenAINext) 和数据库凭证**绝对禁止**硬编码在代码库中。
 

@@ -57,9 +57,11 @@ sequenceDiagram
     participant Worker as Celery Worker
     participant AI as Embedding API
     participant Milvus as Milvus DB
+    participant Log as Centralized Log (PLG)
     
     UI->>Engine: POST /upload (PDF File)
     Engine->>PG: Insert Metadata (Status: Pending)
+    Engine->>Log: Record Upload Event & File Size
     Engine->>MQ: Publish Async Ingestion Task
     Engine-->>UI: Return 202 Accepted (Job ID)
     
@@ -71,6 +73,7 @@ sequenceDiagram
     AI-->>Worker: Return Vectors
     Worker->>Milvus: Upsert Vectors
     Worker->>PG: Update Status -> 'Completed'
+    Worker->>Log: Record Vectorization Latency & Chunk Count
     deactivate Worker
 ```
 
@@ -80,14 +83,18 @@ Instead of waiting 30 seconds for a full financial report, the Engine utilizes P
 ```mermaid
 sequenceDiagram
     participant UI as React Client
-    participant Engine as FastAPI (Async)
+    participant Gateway as FastAPI Gateway
+    participant Log as Local Log File
+    participant Engine as FastAPI Engine
     participant DeepSeek as DeepSeek API
     
-    UI->>Engine: GET /query/stream
+    UI->>Gateway: POST /analyze/stream
+    Gateway->>Log: Write Q&A Metadata (gateway.log)
+    Gateway->>Engine: Forward Stream Request
     Engine->>DeepSeek: Async Stream Completion Request
     DeepSeek-->>Engine: Stream Tokens (Chunk by Chunk)
-    Engine-->>UI: Yield Tokens via SSE
-    Note over UI, Engine: UI updates in real-time without blocking
+    Engine-->>Gateway: Forward Tokens
+    Gateway-->>UI: Yield Tokens via SSE
 ```
 
 ---
@@ -117,6 +124,7 @@ We utilize a combination of purpose-built databases rather than forcing a single
 ```mermaid
 sequenceDiagram
     participant Engine as FastAPI Engine
+    participant Log as Centralized Log (PLG)
     participant AI as Embedding API
     participant Redis as Redis Cache
     participant Milvus as Milvus DB
@@ -125,10 +133,13 @@ sequenceDiagram
     Engine->>Redis: Vector Cosine Similarity Search
     alt Cache Hit (Cosine > 0.97)
         Redis-->>Engine: Cached Report (0ms Latency)
+        Engine->>Log: Record Cache HIT & Token Savings
     else Cache Miss
         Redis-->>Engine: Not Found
+        Engine->>Log: Record Cache MISS
         Engine->>Milvus: Hybrid Search (Query Vector)
         Milvus-->>Engine: Top-K Relevant Chunks
+        Engine->>Log: Record Milvus Query Latency
     end
 ```
 
@@ -161,6 +172,7 @@ graph TD
     F -->|High Relevance| H[Pass & Attach Citations]
     
     H --> I[Final Institutional Report]
+    I --> J[Log Ragas Audit Score]
 ```
 
 ---
@@ -188,7 +200,56 @@ To prevent "Configuration Drift" in this DR strategy, we implemented automated C
 
 ---
 
-## 🔹 7. Security & Secret Management
+---
+
+## 🔹 8. Zero-Trust PLG Monitoring Architecture
+
+To ensure 100% observability and strict data security across our multi-cloud deployment, we implemented a **Promtail + Loki + Grafana (PLG)** stack secured via a **Tailscale** overlay network.
+
+### Multi-Cloud Log Topology
+- **Data Generator (Tencent Cloud)**: The `Gateway` and `Engine` microservices log all analytical queries and health metrics dynamically to host volumes (`/home/ubuntu/AI_Stock_Analyst_Enterprise/logs/`).
+- **Data Shipper**: `Promtail` runs alongside the application, trailing `gateway.log` and `engine.log`.
+- **Zero-Trust Tunnel**: Instead of exposing our logging database to the public internet, Promtail pushes logs through a military-grade encrypted **Tailscale VPN** directly to the Control Plane.
+- **Control Plane (AWS Sydney)**: The `Loki` database securely receives and indexes the logs. `Grafana` visualizes this data in real-time, providing an unadulterated "Live AI Q&A Log" stream by filtering specifically for `Gateway streaming:` queries.
+
+```mermaid
+graph TD
+    subgraph Local["Your Local Mac (Development)"]
+        A1[Source Code]
+        A2[Browser displaying Grafana]
+    end
+
+    subgraph Tencent["Tencent Cloud 🇨🇳 (AI Production Backend)"]
+        direction TB
+        B1((Gateway Container))
+        B2((Engine Container))
+        B3[(Host Hard Drive)]
+        B4[Promtail Log Shipper]
+        
+        B1 -->|FileHandler writes| B3
+        B2 -->|FileHandler writes| B3
+        B3 -.->|Mounts logs volume| B1
+        B3 -.->|Mounts logs volume| B2
+        B4 -->|Tails files| B3
+    end
+
+    subgraph Sydney["AWS Sydney 🇦🇺 (Control & Monitoring Plane)"]
+        direction TB
+        C1[(Loki Database)]
+        C2[Grafana Dashboard]
+        
+        C1 -->|Serves data to| C2
+    end
+
+    A1 -->|git push / ssh deploy| B1
+    A1 -->|git push / ssh deploy| C2
+    B4 ==>|Tailscale Encrypted Tunnel| C1
+    A2 -.->|HTTP Access :3000| C2
+```
+
+---
+
+## 🔹 9. Security & Secret Management
 
 Enterprise financial applications require strict secret management. API keys (Gemini, DeepSeek, OpenAINext) and database credentials are **never** hardcoded into the repository.
 

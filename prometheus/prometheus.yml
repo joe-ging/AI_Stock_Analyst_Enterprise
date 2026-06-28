@@ -6,4 +6,4 @@ scrape_configs:
     metrics_path: '/metrics'
     static_configs:
       # We are now scraping the remote Tencent Cloud (Data Plane) from the AWS Sydney Cloud (Control Plane)
-      - targets: ['43.129.249.161:8001']
+      - targets: ['100.88.60.48:8001']

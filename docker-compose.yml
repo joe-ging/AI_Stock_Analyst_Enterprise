@@ -167,6 +167,15 @@ services:
       - ./logs:/app/logs
     restart: always
 
+  promtail:
+    image: grafana/promtail:latest
+    container_name: enterprise-rag-promtail
+    volumes:
+      - ./logs:/app/logs
+      - ./promtail-config.yml:/etc/promtail/config.yml
+    command: -config.file=/etc/promtail/config.yml
+    restart: always
+
 volumes:
   pgdata:
   etcd_data:
