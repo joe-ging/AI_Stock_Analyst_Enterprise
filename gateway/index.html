@@ -62,6 +62,7 @@
                 pdfMode: "物理 PDF 研報",
                 edgarMode: "SEC EDGAR 系統",
                 ticker: "美股代碼 (Ticker)",
+                tickerFuzzy: "支援模糊輸入",
                 compareYears: "對比財報年份"
             },
             zh_cn: {
@@ -88,6 +89,7 @@
                 pdfMode: "物理 PDF 研报",
                 edgarMode: "SEC EDGAR 系统",
                 ticker: "美股代码 (Ticker)",
+                tickerFuzzy: "支持模糊输入",
                 compareYears: "对比财报年份"
             },
             en: {
@@ -114,6 +116,7 @@
                 pdfMode: "PDF Document",
                 edgarMode: "SEC EDGAR System",
                 ticker: "Stock Ticker",
+                tickerFuzzy: "Supports fuzzy input",
                 compareYears: "Filing Years"
             }
         };
@@ -407,7 +410,10 @@
                                 ) : (
                                     <div className="space-y-4 p-4 bg-gray-50/50 rounded-2xl border border-gray-100/50 animate-in fade-in duration-300">
                                         <div>
-                                            <label className="block text-[9px] font-black text-gray-400 uppercase tracking-wider mb-2">{t.ticker}</label>
+                                            <div className="flex justify-between items-baseline mb-2">
+                                                <label className="block text-[9px] font-black text-gray-400 uppercase tracking-wider">{t.ticker}</label>
+                                                <span className="text-[9px] font-bold text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded">{t.tickerFuzzy}</span>
+                                            </div>
                                             <input 
                                                 type="text" 
                                                 value={ticker} 
