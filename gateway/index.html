@@ -323,18 +323,18 @@
             return (
                 <div className="min-h-screen flex flex-col">
                     {/* Header */}
-                    <header className="bg-white border-b border-gray-200 px-8 h-20 flex items-center justify-between sticky top-0 z-50 backdrop-blur-md bg-white/90">
-                        <div className="flex items-center gap-4">
-                            <Icons.BrandLogo />
+                    <header className="bg-white border-b border-gray-200 px-4 md:px-8 h-16 md:h-20 flex items-center justify-between sticky top-0 z-50 backdrop-blur-md bg-white/90">
+                        <div className="flex items-center gap-2 md:gap-4">
+                            <div className="scale-75 md:scale-100 origin-left"><Icons.BrandLogo /></div>
                             <div>
-                                <h1 className="text-xl font-black text-gray-900 tracking-tight leading-none mb-1">{t.title}</h1>
-                                <p className="text-[10px] text-red-600 font-bold uppercase tracking-widest">{t.subtitle}</p>
+                                <h1 className="text-sm md:text-xl font-black text-gray-900 tracking-tight leading-none mb-0.5 md:mb-1">{t.title}</h1>
+                                <p className="text-[8px] md:text-[10px] text-red-600 font-bold uppercase tracking-widest">{t.subtitle}</p>
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-8">
+                        <div className="flex items-center gap-2 md:gap-8">
                             {/* Live System Status */}
-                            <div className="flex items-center gap-2 border-r pr-8 border-gray-100">
+                            <div className="hidden lg:flex items-center gap-2 border-r pr-8 border-gray-100">
                                 <span className={`w-2.5 h-2.5 rounded-full ${dbStatus === 'online' ? 'bg-emerald-500 animate-pulse' : dbStatus === 'offline' ? 'bg-rose-500' : 'bg-amber-500'}`}></span>
                                 <span className="text-[10px] font-black text-gray-500 tracking-wider">
                                     {dbStatus === 'online' ? 'SYSTEM ONLINE' : dbStatus === 'offline' ? 'SYSTEM OFFLINE' : 'CHECKING STATE'}
@@ -342,12 +342,12 @@
                             </div>
 
                             {/* Language Switcher */}
-                            <div className="flex bg-gray-100 p-1 rounded-lg text-[10px] font-bold">
+                            <div className="flex bg-gray-100 p-0.5 md:p-1 rounded-lg text-[9px] md:text-[10px] font-bold">
                                 {['zh_hk', 'zh_cn', 'en'].map(l => (
                                     <button 
                                         key={l}
                                         onClick={() => setLang(l)}
-                                        className={`px-3 py-1.5 rounded-md transition-all ${lang === l ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}
+                                        className={`px-2 py-1 md:px-3 md:py-1.5 rounded-md transition-all whitespace-nowrap ${lang === l ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}
                                     >
                                         {l.toUpperCase().replace('_', '-')}
                                     </button>
@@ -355,7 +355,7 @@
                             </div>
 
                             {/* User Profile */}
-                            <div className="flex items-center gap-4 border-l pl-8 border-gray-100">
+                            <div className="flex items-center gap-4 border-l pl-2 md:pl-8 border-gray-100">
                                 <div className="text-right hidden md:block">
                                     <p className="text-sm font-black text-gray-800 leading-tight">{CONFIG.userName}</p>
                                     <p className="text-[10px] text-gray-400 font-medium mb-1.5">{t.founder}, {CONFIG.parentCompany}</p>
@@ -365,7 +365,7 @@
                                         ))}
                                     </div>
                                 </div>
-                                <div className="h-12 w-12 bg-slate-800 rounded-full flex items-center justify-center text-xs font-black text-white shadow-md">
+                                <div className="h-9 w-9 md:h-12 md:w-12 bg-slate-800 rounded-full flex items-center justify-center text-[10px] md:text-xs font-black text-white shadow-md flex-shrink-0">
                                     {CONFIG.initials}
                                 </div>
                             </div>
