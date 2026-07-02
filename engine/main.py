@@ -198,6 +198,7 @@ def build_final_prompt(target_query: str, struct_instructions: str, retrieved_co
         f"{struct_instructions}\n\n"
         f"{multi_year_instruction}"
         f"STRICT FORMAT CONSTRAINTS:\n"
+        f"- STRICT LANGUAGE CONSTRAINT: The user has selected {target_lang} as their preferred language. You MUST translate all retrieved English terms/facts and generate the entire report in {target_lang}. Every section, title, and sentence must be strictly in {target_lang}.\n"
         f"- You MUST ONLY use the facts, figures, and page numbers present in the [RETRIEVED DATA] block below. Do NOT use your pre-trained memory or make up page numbers.\n"
         f"- DO NOT introduce any external regulatory codes, tax form numbers, or specific tax rates UNLESS they are explicitly written in the [RETRIEVED DATA] below.\n"
         f"- {citation_instruction}\n"
@@ -240,7 +241,7 @@ app.add_middleware(
 # Instrument the FastAPI app for Prometheus monitoring metrics
 Instrumentator().instrument(app).expose(app)
 
-def call_deepseek(prompt: str, model: str = "deepseek-chat") -> str:
+def call_deepseek(prompt: str, model: str = "deepseek-chat", system_prompt: str = None) -> str:
     """Synchronous DeepSeek call (kept for backward compat with tests/eval)"""
     if not DEEPSEEK_API_KEY:
         raise ValueError("DEEPSEEK_API_KEY is not configured")
@@ -250,11 +251,13 @@ def call_deepseek(prompt: str, model: str = "deepseek-chat") -> str:
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
         "Content-Type": "application/json"
     }
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt})
     payload = {
         "model": model,
-        "messages": [
-            {"role": "user", "content": prompt}
-        ],
+        "messages": messages,
         "temperature": 0.2
     }
     
@@ -290,15 +293,19 @@ async def call_deepseek_async(prompt: str, model: str = "deepseek-chat") -> str:
 import queue
 import threading
 
-def stream_deepseek_sync(prompt: str, model: str = "deepseek-chat"):
+def stream_deepseek_sync(prompt: str, model: str = "deepseek-chat", system_prompt: str = None):
     url = "https://api.deepseek.com/chat/completions"
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
         "Content-Type": "application/json"
     }
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt})
     payload = {
         "model": model,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": messages,
         "temperature": 0.2,
         "stream": True
     }
@@ -367,7 +374,7 @@ async def get_embedding(text: str) -> list:
             logger.error(f"Gemini Embedding failed: {e}")
             return None
 
-async def stream_deepseek(prompt: str, model: str = "deepseek-chat") -> AsyncGenerator[str, None]:
+async def stream_deepseek(prompt: str, model: str = "deepseek-chat", system_prompt: str = None) -> AsyncGenerator[str, None]:
     """Streaming DeepSeek call via thread-safe queue and requests (supporting socks5h)"""
     if not DEEPSEEK_API_KEY:
         raise ValueError("DEEPSEEK_API_KEY is not configured")
@@ -376,7 +383,7 @@ async def stream_deepseek(prompt: str, model: str = "deepseek-chat") -> AsyncGen
     
     def _producer():
         try:
-            for token in stream_deepseek_sync(prompt, model):
+            for token in stream_deepseek_sync(prompt, model, system_prompt):
                 q.put(token)
         except Exception as e:
             logger.error(f"DeepSeek stream producer thread failed: {e}")
@@ -802,8 +809,8 @@ async def query_rag(
     draft_result = None
     if DEEPSEEK_API_KEY:
         try:
-            logger.info("Generating initial draft using DeepSeek Chat...")
-            draft_result = call_deepseek(final_prompt, model="deepseek-chat")
+            system_prompt = f"You are a professional financial analyst. The user has selected {target_lang} as their preferred language. You MUST translate all retrieved English terms/facts and generate the entire report strictly in {target_lang}."
+            draft_result = call_deepseek(final_prompt, model="deepseek-chat", system_prompt=system_prompt)
         except Exception as ds_err:
             logger.warning(f"DeepSeek Chat draft generation failed: {ds_err}. Falling back to Gemini 2.5 Flash...")
             if API_KEY:
@@ -836,8 +843,8 @@ async def query_rag(
         final_report = None
         if DEEPSEEK_API_KEY:
             try:
-                logger.info("Performing audit & polish using DeepSeek Chat...")
-                final_report = call_deepseek(audit_prompt, model="deepseek-chat")
+                system_prompt = f"You are a professional financial audit agent. The user has selected {target_lang} as their preferred language. You MUST output the audited report strictly in {target_lang}."
+                final_report = call_deepseek(audit_prompt, model="deepseek-chat", system_prompt=system_prompt)
             except Exception as ds_err:
                 logger.warning(f"DeepSeek Chat audit failed: {ds_err}. Falling back to Gemini 2.5 Pro...")
                 if API_KEY:
@@ -1024,7 +1031,7 @@ async def resolve_document_ids(filename: str):
         cur.close()
         return_db_connection(conn)
         
-    return doc_ids, company_name, doc_type, ",".join(doc_years)
+    return doc_ids, company_name, doc_type, ",".join(y for y in doc_years if y)
 
 # --- Streaming SSE Endpoint ---
 
@@ -1182,8 +1189,8 @@ async def query_rag_stream(
     async def sse_generator() -> AsyncGenerator[str, None]:
         full_text = ""
         
-        logger.info("[Stream] Streaming analysis draft directly...")
-        async for chunk in stream_deepseek(final_prompt):
+        system_prompt = f"You are a professional financial analyst. The user has selected {target_lang} as their preferred language. You MUST translate all retrieved English terms/facts and generate the entire report strictly in {target_lang}."
+        async for chunk in stream_deepseek(final_prompt, system_prompt=system_prompt):
             full_text += chunk
             yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
         
@@ -1339,9 +1346,9 @@ async def query_rag_stream(
             if detailed_match:
                 detailed_report = detailed_match.group(1).strip()
                 
-                if language.value == "Simplified Chinese":
+                if language.value == "zh_cn":
                     ragas_header = "### 🛡️ RAGAS AI 质量审计报告"
-                elif language.value == "Traditional Chinese":
+                elif language.value == "zh_hk":
                     ragas_header = "### 🛡️ RAGAS AI 質量審計報告"
                 else:
                     ragas_header = "### 🛡️ RAGAS AI SELF-AUDIT REPORT"
