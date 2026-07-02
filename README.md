@@ -17,6 +17,30 @@
 
 ---
 
+## 🔹 Functional & Non-Functional Requirements
+
+| ID | Requirement | Type | SLA / Target | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| FR-01 | Parse SEC 10-K / 10-Q PDFs; extract tables & text | Functional (P0) | — | ✅ |
+| FR-02 | Natural-language Q&A over financial data | Functional (P0) | — | ✅ |
+| FR-03 | Traceable citations for every answer | Functional (P0) | — | ✅ |
+| FR-04 | Async document processing (non-blocking upload) | Functional (P1) | — | ✅ |
+| FR-05 | RAGAS audit report per query | Functional (P1) | — | ✅ |
+| NFR-01 | Performance | Non-Functional | P99 < 200 ms (cache); First-token < 1.5 s | ✅ Redis semantic cache |
+| NFR-02 | Availability | Non-Functional | SLA ≥ 99.9 %; RTO < 10 min; RPO < 15 min | ✅ LLM Cascade + Pilot Light |
+| NFR-03 | Accuracy | Non-Functional | Faithfulness ≥ 0.85; Precision ≥ 0.75 | ✅ CI/CD quality gate |
+| NFR-04 | Security | Non-Functional | Zero-trust; no hardcoded secrets | ✅ Tailscale + KMS |
+| NFR-05 | Scalability | Non-Functional | Horizontal scaling (Milvus, Celery) | ✅ Microservices + Docker |
+
+### Quality Assurance Strategy
+- **Unit Tests** — `pytest` on parsing logic & API routes
+- **Integration Tests** — Full Docker Compose end-to-end validation
+- **Load Testing** — Locust concurrent simulation; verify cache hit rate & P99
+- **Chaos Engineering** — Weekly automated DR drills (`dr_game_day.yml`); verify RTO/RPO
+- **Production AIOps** — Prometheus + Grafana real-time dashboards; LLM Cascade auto-failover on anomaly detection
+
+---
+
 ## 🔹 1. Enterprise Microservices Architecture & Tech Stack
 
 Our system is decoupled into specialized microservices, avoiding monolithic bottlenecks. Every I/O operation—from document ingestion to LLM token streaming—is designed to be fully **asynchronous** to maximize concurrency.
@@ -263,6 +287,60 @@ Enterprise financial applications require strict secret management. API keys (Ge
 | **Local Development** | Injected via local `.env` files (ignored by `.gitignore`). |
 | **CI/CD Pipeline** | Managed securely via **GitHub Secrets** during GitHub Actions execution. |
 | **Production** | Managed via Cloud Key Management Service (KMS) or injected as secure runtime environment variables into the Tencent/AWS container environment. |
+
+---
+
+## 🔹 10. Cloud Cost Optimization Strategy
+
+Based on the Tencent Cloud deployment scenario, cloud resource costs are controlled across the following dimensions without sacrificing performance:
+
+### 13.1 Compute Layer: Serverless & Elastic Scaling
+- **Recommended Approach**: For AI inference workloads with significant load fluctuations, prioritize TDSQL-C Serverless mode and Serverless Cloud Functions (SCF).
+- **Projected Savings**: Compared to long-term fixed-spec CVM instances, idle compute costs can be reduced by **60%–80%**.
+
+### 13.2 Storage Layer: Hot/Cold Data Tiering
+- **Recommended Approach**: Historical financial report results (e.g., documents unqueried for > 6 months) are automatically archived to COS Archive Storage.
+- **Projected Savings**: Compared to full SSD cloud disk usage, archive storage costs are reduced by approximately **85%**.
+
+### 13.3 Database Layer: TDSQL-C vs Self-Hosted PostgreSQL
+For the current Docker-hosted PostgreSQL setup, migration to Tencent Cloud managed TDSQL-C yields the following cost benefits:
+
+| Scenario | Description |
+| :--- | :--- |
+| **Self-Hosted PG on CVM** | Requires upfront CVM fees + self-managed primary-replica + self-tuning + self-DR |
+| **Managed TDSQL-C** | Pay-per-use compute (CCU) and storage (GB); built-in HA and automated backups |
+
+**Conclusion**: For this AI project scenario, TDSQL-C's compute-storage separation means paying only for actual resource consumption, with no additional backup storage costs. Estimated **TCO reduction of 30%–40%**.
+
+### 13.4 Purchasing Strategy
+- **Dev / Test Environments**: Pay-as-you-go billing; create and destroy on demand.
+- **Production Environments**: Annual/monthly commitments + resource package prepurchase (e.g., storage packs), saving approximately **36%–50%** in annual spend compared to pay-as-you-go.
+
+---
+
+## 🔹 11. Competitive Cloud Comparison (Tencent Cloud Differentiators)
+
+In overseas business expansion, Tencent Cloud's differentiated value lies in **scenario-specific solutions** rather than pure compute price competition:
+
+| Scenario | Tencent Cloud Advantage | Typical Industries |
+| :--- | :--- | :--- |
+| Real-Time Audio/Video (TRTC) | Built on QQ/WeChat technology; ultra-low latency with superior weak-network resilience | Live-stream e-commerce, Online education, Social entertainment |
+| Gaming Globalization | End-to-end solution (acceleration, security, voice); deep understanding of game lifecycle pain points | Game publishing, Esports platforms |
+| Database (TDSQL) | Financial-grade strong consistency with extensive industry case studies in domestic substitution | FinTech, SaaS providers |
+
+---
+
+## 🔹 12. Managed Database vs Self-Hosted PostgreSQL (Architecture Decision)
+
+| Dimension | Docker Self-Hosted PG (Current) | Tencent Cloud Managed DB (e.g., TDSQL-C) |
+| :--- | :--- | :--- |
+| **High Availability** | Requires manual primary-replica setup & failover | Built-in HA architecture, cross-AZ deployment |
+| **Backup & Recovery** | Self-managed backup scripts & storage | Automated backups, one-click point-in-time recovery |
+| **Performance Tuning** | Self-analysis of slow queries & parameter tuning | Console provides performance diagnostics & optimization suggestions |
+| **Elastic Scaling** | Requires downtime or custom online migration | Console-driven, online sub-second smooth scaling |
+| **Cost Structure** | CVM rental + DBA labor/ops costs | Pay-per-spec (or Serverless pay-per-use); no dedicated DBA required |
+
+> **SA Perspective**: The cost savings of managed services extend beyond infrastructure fees—the critical benefit is **freeing the client's operations team** to focus on business innovation instead of database maintenance.
 
 ---
 
